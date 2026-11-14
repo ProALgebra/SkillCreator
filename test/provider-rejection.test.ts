@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Effect, Schema } from 'effect';
-import { fixture, scope } from './helpers.js';
+import { fixture, scope, code } from './helpers.js';
 import type { Job } from '../src/jobs.js';
 import type { DurableEvent } from '../src/types.js';
 
@@ -76,8 +76,12 @@ test('provider rate rejection releases budget and concurrency for the next job w
     patch: { limits: { daily_cost_usd: 1 } },
   });
   const rejected = (await call('curator.review', { execution: { mode: 'auto' } })) as Job;
+  await assert.rejects(
+    call('curator.review', { execution: { mode: 'direct' } }),
+    code('budget_exceeded'),
+  );
+  await core.tick();
   const next = (await call('curator.review', { execution: { mode: 'direct' } })) as Job;
-
   await core.tick();
 
   const failed = core.jobs.get(scope, rejected.job_id);

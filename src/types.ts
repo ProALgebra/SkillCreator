@@ -111,6 +111,12 @@ export interface Settings {
   curator: {
     enabled: boolean;
     interval_hours: number;
+    min_idle_hours: number;
+    max_batch_skills: number;
+    max_batches_per_run: number;
+    provider?: string;
+    model?: string;
+    variant?: string;
     llm_review_enabled: boolean;
     stale_after_days: number;
     archive_after_days: number;
@@ -128,6 +134,7 @@ export interface Settings {
   approval: {
     mode: 'manual' | 'safe' | 'auto';
     allow_auto_create: boolean;
+    allow_auto_merge: boolean;
     allow_auto_patch_managed_low_risk: boolean;
     allow_auto_archive_managed: boolean;
     protect_manual_skills: boolean;

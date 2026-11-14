@@ -6,7 +6,7 @@ import { Store } from './store.js';
 import { PackageStore, metadata, validatePackage, renamePackage } from './packages.js';
 import { ensure } from './errors.js';
 import { hash } from './security.js';
-import { containsSecrets } from './learning.js';
+import { containsSecrets, redact } from './learning.js';
 
 interface Publication {
   id: string;
@@ -14,6 +14,7 @@ interface Publication {
   after: Skill[];
   committed: boolean;
 }
+const publishedState = (state: Skill['state']) => state === 'active' || state === 'stale';
 export class Catalog {
   constructor(
     readonly store: Store,
@@ -159,9 +160,9 @@ export class Catalog {
     const next = this.newSkill(scope, files);
     next.scope = kind;
     ensure(
-      !this.list(scope).some((s) => s.name === next.name && s.state === 'active'),
+      !this.list(scope).some((s) => s.name === next.name && publishedState(s.state)),
       'validation_error',
-      'An active skill with this name already exists',
+      'A published skill with this name already exists',
     );
     return dry ? next : this.commit(scope, actor, [], [next], 'skill.created')[0]!;
   }
@@ -204,11 +205,11 @@ export class Catalog {
         (s) =>
           s.skill_id !== id &&
           s.name === meta.name &&
-          s.state === 'active' &&
-          (patch.state ?? old.state) === 'active',
+          publishedState(s.state) &&
+          publishedState(patch.state ?? old.state),
       ),
       'validation_error',
-      'An active skill with this name already exists',
+      'A published skill with this name already exists',
     );
     const next: Skill = {
       ...old,
@@ -335,42 +336,24 @@ export class Catalog {
       const existing = this.list(scope).find((s) => s.source_path === entry.path);
       if (entry.path.startsWith(this.packages.root + '/')) continue;
       let files: PackageFiles;
-      let complete = true;
+      let complete = false;
       try {
         files = this.packages.read(entry.path.replace(/[/\\]SKILL\.md$/, ''), allowedRoots);
+        validatePackage(files, containsSecrets);
+        complete = true;
       } catch {
-        complete = false;
-        files = {
-          'SKILL.md': entry.content?.startsWith('---\n')
-            ? entry.content
-            : '---\nname: ' +
-              JSON.stringify(entry.name) +
-              '\ndescription: ' +
-              JSON.stringify(entry.description || entry.name) +
-              '\n---\n\n' +
-              (entry.content ?? ''),
-        };
-      }
-      try {
-        if (complete) validatePackage(files, containsSecrets);
-        else {
-          metadata(files);
-          ensure(!containsSecrets(JSON.stringify(files)), 'validation_error', 'Sensitive source');
-        }
-      } catch {
-        continue;
+        // SDK sources may have virtual paths, display names and body-only content.
+        // Keep a redacted preview without treating it as a publishable package.
+        files = { 'SKILL.md': redact(entry.content ?? '') };
       }
       const base = complete
         ? this.newSkill(scope, files)
         : {
-            ...this.newSkill(
-              scope,
-              renamePackage(
-                { 'SKILL.md': '---\nname: placeholder\ndescription: Source metadata\n---\n' },
-                metadata(files).name,
-              ),
-            ),
-            ...metadata(files),
+            ...this.newSkill(scope, {
+              'SKILL.md': '---\nname: placeholder\ndescription: Source metadata\n---\n',
+            }),
+            name: redact(entry.name),
+            description: redact(entry.description || entry.name),
             files,
             content_hash: hash(files['SKILL.md']),
             package_hash: hash(files),
@@ -390,7 +373,9 @@ export class Catalog {
       if (
         existing &&
         existing.package_hash === skill.package_hash &&
-        existing.validation_status === skill.validation_status
+        existing.validation_status === skill.validation_status &&
+        existing.name === skill.name &&
+        existing.description === skill.description
       )
         continue;
       this.store.transaction(() => {
@@ -601,8 +586,8 @@ export class Catalog {
     }
     const remaining = this.list(scope).filter((s) => !after.some((a) => a.skill_id === s.skill_id));
     const names = new Set<string>();
-    for (const skill of [...remaining, ...after].filter((s) => s.state === 'active')) {
-      ensure(!names.has(skill.name), 'validation_error', 'Duplicate active skill name');
+    for (const skill of [...remaining, ...after].filter((s) => publishedState(s.state))) {
+      ensure(!names.has(skill.name), 'validation_error', 'Duplicate published skill name');
       names.add(skill.name);
     }
     const next: Proposal = { ...p, status: 'applied', revision: p.revision + 1 };

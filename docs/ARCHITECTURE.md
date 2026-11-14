@@ -24,7 +24,7 @@ flowchart TB
 | Файл                        | Ответственность                                                                             |
 | --------------------------- | ------------------------------------------------------------------------------------------- |
 | `server.ts`                 | Реальная регистрация Plugin.define, RPC, skill transform/reload, capture и scheduler        |
-| `core.ts`                   | Авторизованный dispatch 77 методов, идемпотентность, материализация LLM-контекста           |
+| `core.ts`                   | Авторизованный dispatch 80 методов, идемпотентность, материализация LLM-контекста           |
 | `catalog.ts`                | Каталог, revisions, версии, proposals, merge/split, публикация и recovery                   |
 | `packages.ts`               | Allowlist путей, links, YAML, binary encoding, staged filesystem replacement                |
 | `store.ts` / `database.ts`  | SQLite, миграция v1, Node/Bun drivers, IMMEDIATE transactions, process lock, durable events |
@@ -85,3 +85,7 @@ erDiagram
 Отдельный `learning.run` сохраняет прежние требования: только verified-источники и буквальное evidence. При выключенном conversation review доступен прежний сбор test-tool фрагментов и backlog истории. Внутренние session IDs регистрируются до create/prompt. Ни один LLM-ответ не может одобрить собственное предложение; автоматическое одобрение выполняет только настроенная серверная policy.
 
 Официальные источники совместимости: [server API](https://opencode.ai/docs/build/plugins/server/), [TUI API](https://opencode.ai/docs/build/plugins/cli/), [RPC API](https://opencode.ai/docs/build/plugins/rpc/), [package parts](https://opencode.ai/docs/build/plugins/). Проверены 14 ноября 2026; пакет закреплён на 2.3.0.
+
+## Семантический куратор
+
+`optimizer.ts` готовит ограниченные группы полных пакетов, проверяет план модели, сохраняет proposals, отчёты и обратные снимки. `curator-scheduler.ts` хранит расписание и активность в control; проверяет native idle, паузы, незавершённые jobs и повторные попытки. Core авторизует optimize/status/rollback и транзакционно принимает группы; JobService обслуживает operation=optimize на прежних executors. Для auto-merge требуется отдельный allow_auto_merge. Детали — [CURATOR.md](CURATOR.md).

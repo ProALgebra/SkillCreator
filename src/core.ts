@@ -14,6 +14,8 @@ import {
 } from './learning.js';
 import { JobService, type Job, type Executor } from './jobs.js';
 import { ConversationReviewService, type Conversations } from './refine.js';
+import { SkillOptimizer } from './optimizer.js';
+import { curatorScheduleStatus } from './curator-scheduler.js';
 import { inputSchema, methodNames, type MethodName, type RpcInput } from './rpc.js';
 import { authorize, hash } from './security.js';
 import { ensure, CuratorError } from './errors.js';
@@ -46,6 +48,7 @@ const readMethods = new Set<MethodName>([
   'learning.candidates',
   'learning.sessions',
   'curator.analyze_duplicates',
+  'curator.status',
   'proposals.list',
   'proposals.get',
   'proposals.validate',
@@ -83,6 +86,8 @@ const curatorMethods = new Set<MethodName>([
   'learning.backfill',
   'learning.ingest',
   'curator.review',
+  'curator.optimize',
+  'curator.rollback',
   'curator.lifecycle_run',
   'curator.update',
   'proposals.approve',
@@ -110,6 +115,7 @@ export class CuratorCore {
   readonly settings: SettingsService;
   readonly learning: LearningService;
   readonly conversationReview: ConversationReviewService;
+  readonly optimizer: SkillOptimizer;
   readonly jobs: JobService;
   private gate: Promise<unknown> = Promise.resolve();
   private closed = false;
@@ -120,6 +126,11 @@ export class CuratorCore {
       new PackageStore(options.skillDirectory ?? join(options.dataDirectory, 'skills')),
     );
     this.settings = new SettingsService(this.store);
+    this.optimizer = new SkillOptimizer(
+      this.store,
+      this.catalog,
+      (s) => this.settings.get(s).settings,
+    );
     this.learning = new LearningService(this.store, (s) => this.settings.get(s).settings);
     this.conversationReview = new ConversationReviewService(
       this.store,
@@ -389,7 +400,7 @@ export class CuratorCore {
     switch (method) {
       case 'system.health':
         return {
-          version: '0.2.1',
+          version: '0.3.1',
           rpc_version: 'skill-curator.v1',
           sdk_version: '2.3.0',
           storage: 'sqlite-wal',
@@ -742,6 +753,149 @@ export class CuratorCore {
           this.required(i.idempotency_key, 'idempotency_key'),
         );
       }
+      case 'curator.status': {
+        const settings = this.settings.get(scope).settings;
+        const active = this.catalog
+          .list(scope)
+          .filter((s) => ['active', 'stale'].includes(s.state));
+        const jobs = this.jobs
+          .list(scope)
+          .filter((j) => j.operation === 'optimize')
+          .sort((a, b) => b.created_at.localeCompare(a.created_at));
+        return {
+          settings: settings.curator,
+          schedule: curatorScheduleStatus(this.store, scope, settings),
+          paused: this.store.get('control', 'pause:' + hash(scope)) ?? null,
+          library: {
+            active_skills: active.length,
+            instruction_chars: active.reduce((n, s) => n + (s.files['SKILL.md']?.length ?? 0), 0),
+            package_chars: active.reduce(
+              (n, s) => n + Object.values(s.files).reduce((sum, text) => sum + text.length, 0),
+              0,
+            ),
+          },
+          jobs: jobs.slice(0, i.limit ?? 50),
+          reports: jobs.slice(0, i.limit ?? 50).map((j) => ({
+            ...this.optimizer.report(scope, j.job_id),
+            job_id: j.job_id,
+            run_id: j.payload.curator_run_id,
+            status: j.status,
+            error: j.error ?? null,
+            proposal_ids: j.proposal_ids,
+          })),
+        };
+      }
+      case 'curator.optimize': {
+        const settings = this.settings.get(scope).settings;
+        const paused = this.store.get<{ all?: boolean; curator?: boolean }>(
+          'control',
+          'pause:' + hash(scope),
+        );
+        ensure(
+          settings.enabled && !paused?.all && !paused?.curator,
+          'executor_unavailable',
+          'Curator work is paused',
+        );
+        const cursorKey = 'optimizer-cursor:' + hash(scope);
+        const selectedIds = i.skill_ids ?? (i.skill_id ? [i.skill_id] : undefined);
+        const previous = this.store.get<{
+          cursor: number;
+          catalog_hash: string;
+          remaining_ids?: string[];
+          total?: number;
+        }>('control', cursorKey);
+        const requested = i.cursor === undefined ? undefined : Number(i.cursor);
+        ensure(
+          requested === undefined || (Number.isSafeInteger(requested) && requested >= 0),
+          'validation_error',
+          'Invalid optimizer cursor',
+        );
+        const sweepIds =
+          selectedIds ??
+          (requested === undefined && previous?.remaining_ids?.length
+            ? previous.remaining_ids
+            : undefined);
+        const startCursor = requested ?? 0;
+        let plan = this.optimizer.prepare(scope, sweepIds, i.reason, startCursor);
+        const total =
+          !selectedIds && requested === undefined && previous?.remaining_ids?.length
+            ? (previous.total ?? plan.total)
+            : plan.total;
+        const configured = settings.curator;
+        const execution = {
+          ...(configured.provider && configured.model
+            ? {
+                provider: configured.provider,
+                model: configured.model,
+                variant: configured.variant,
+              }
+            : {}),
+          ...i.execution,
+        };
+        const mode = plan.batches.length ? this.jobs.resolve(scope, 'optimize', execution) : null;
+        if (dry) return { ...plan, total, executor_mode: mode, files_written: false };
+        ensure(
+          !this.jobs
+            .list(scope)
+            .some(
+              (j) =>
+                j.operation === 'optimize' &&
+                ['queued', 'running', 'waiting_executor', 'unknown_outcome'].includes(j.status),
+            ),
+          'rate_limited',
+          'An optimization pass is already pending in this workspace',
+        );
+        const run_id = randomUUID();
+        const cap = execution.max_cost_usd ?? settings.limits.max_job_cost_usd;
+        ensure(
+          Number.isFinite(cap) && cap >= 0 && cap <= settings.limits.max_job_cost_usd,
+          'budget_exceeded',
+          'Job budget exceeds the configured limit',
+        );
+        if (cap > 0 && plan.batches.length) {
+          const affordable = Math.floor((this.jobs.remainingBudget(scope) + 1e-9) / cap);
+          ensure(
+            affordable > 0,
+            'budget_exceeded',
+            'Daily budget has no space for an optimization batch',
+          );
+          if (affordable < plan.batches.length)
+            plan = this.optimizer.prepare(scope, sweepIds, i.reason, startCursor, affordable);
+        }
+        const jobs = this.store.transaction(() => {
+          const queued = plan.batches.map((batch, index) =>
+            this.jobs.run(
+              scope,
+              actor,
+              'optimize',
+              { ...batch, curator_run_id: run_id, skipped: plan.skipped },
+              execution,
+              'optimizer:' + hash([this.required(i.idempotency_key, 'idempotency_key'), index]),
+            ),
+          );
+          if (!selectedIds)
+            this.store.put('control', cursorKey, {
+              catalog_hash: plan.catalog_hash,
+              cursor: plan.next_cursor ?? 0,
+              remaining_ids: plan.remaining_ids,
+              total,
+            });
+          this.store.emit('curator.run_queued', scope, actor, run_id, {
+            job_ids: queued.map((j) => j.job_id),
+            skipped: plan.skipped.length,
+          });
+          return queued;
+        });
+        return {
+          run_id,
+          jobs,
+          skipped: plan.skipped,
+          total,
+          next_cursor: plan.next_cursor,
+        };
+      }
+      case 'curator.rollback':
+        return this.optimizer.rollback(scope, actor, proposal(), rev(), dry);
       case 'curator.analyze_duplicates':
         return this.page(
           deterministicReview(this.catalog.list(scope), this.settings.get(scope).settings).filter(
@@ -1001,6 +1155,7 @@ export class CuratorCore {
     }
   }
   modelPayload(job: Job, external = false): Record<string, unknown> {
+    if (job.operation === 'optimize') return this.optimizer.buildPayload(job);
     if (job.operation === 'learning' && job.payload.review)
       return this.conversationReview.buildPayload(job, external);
     if (job.operation === 'learning')
@@ -1038,6 +1193,7 @@ export class CuratorCore {
     const scope: Scope = { tenant_id: job.tenant_id, workspace_id: job.workspace_id };
     const ids = this.store.transaction(() => {
       if (job.payload.test) return [];
+      if (job.operation === 'optimize') return this.optimizer.acceptResult(job, result);
       if (job.operation === 'learning' && job.payload.review)
         return this.conversationReview.acceptResult(job, result);
       if (job.operation === 'merge') {
@@ -1211,7 +1367,13 @@ export class CuratorCore {
         proposal.risk_level === 'low' &&
         proposal.operation === 'create' &&
         proposal.changes.every((c) => c.action === 'create');
-      if (!patch && !archive && !create) continue;
+      const merge =
+        policy.allow_auto_merge &&
+        proposal.operation === 'merge' &&
+        proposal.changes.filter((c) => c.action === 'create').length === 1 &&
+        proposal.changes.filter((c) => c.action === 'supersede').length >= 2 &&
+        proposal.changes.every((c) => ['create', 'supersede'].includes(c.action));
+      if (!patch && !archive && !create && !merge) continue;
       const approved = this.catalog.decide(
         scope,
         'system.policy',

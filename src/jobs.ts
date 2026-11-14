@@ -129,15 +129,27 @@ export class JobService {
     );
     return selected;
   }
-  private budget(scope: Scope, cap: number) {
+  remainingBudget(scope: Scope, excludeJobID?: string): number {
     const s = this.settings(scope);
     const today = now().slice(0, 10);
     const used = this.store
       .all<Attempt>('job_attempts')
       .filter((a) => a.tenant_id === scope.tenant_id && a.day === today)
       .reduce((sum, a) => sum + a.cost + a.reserved, 0);
+    const queued = this.store
+      .all<Job>('jobs')
+      .filter(
+        (j) =>
+          j.tenant_id === scope.tenant_id &&
+          j.job_id !== excludeJobID &&
+          ['queued', 'waiting_executor'].includes(j.status),
+      )
+      .reduce((sum, j) => sum + Math.max(0, j.max_cost_usd - j.cost), 0);
+    return s.limits.daily_cost_usd - used - queued;
+  }
+  private budget(scope: Scope, cap: number, excludeJobID?: string) {
     ensure(
-      used + cap <= s.limits.daily_cost_usd + 1e-9,
+      cap <= this.remainingBudget(scope, excludeJobID) + 1e-9,
       'budget_exceeded',
       'Daily tenant budget is exhausted',
     );
@@ -246,7 +258,7 @@ export class JobService {
     ensure(this.capacity(j), 'rate_limited', 'Concurrency limit reached');
     const s = this.settings(j);
     ensure(s.enabled && !this.stopped, 'executor_unavailable', 'Background work is paused');
-    this.budget(j, j.max_cost_usd - j.cost);
+    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
     j.attempt++;
     j.attempt_id = randomUUID();
     j.status = 'running';
@@ -331,6 +343,7 @@ export class JobService {
   resume(scope: Scope, id: string): Job {
     const j = this.get(scope, id);
     ensure(j.status === 'interrupted', 'validation_error', 'Job is not paused');
+    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
     j.status = ['valeria', 'external'].includes(j.executor_mode) ? 'waiting_executor' : 'queued';
     return this.save(j);
   }
@@ -353,6 +366,7 @@ export class JobService {
     ensure(j.status === 'failed', 'unknown_outcome', 'Only a definitely failed job can be retried');
     ensure(!this.active.has(id), 'rate_limited', 'Executor is still stopping');
     ensure(j.cost < j.max_cost_usd, 'budget_exceeded', 'No budget remains');
+    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
     j.status = ['valeria', 'external'].includes(j.executor_mode) ? 'waiting_executor' : 'queued';
     delete j.error;
     this.store.delete('control', 'receipt:' + id);

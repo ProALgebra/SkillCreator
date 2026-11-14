@@ -13,6 +13,7 @@ import { ExecutorPreflightError, type Executor, type Job } from './jobs.js';
 import { resolveLocalToken } from './auth.js';
 import { openCodeConversations } from './opencode-conversations.js';
 import { ConversationReview } from './conversation-review.js';
+import { CuratorScheduler } from './curator-scheduler.js';
 export { CuratorCore } from './core.js';
 export { CuratorError } from './errors.js';
 export type { Principal, Scope, Skill, Proposal, Settings } from './types.js';
@@ -48,6 +49,57 @@ export function parseModelJson(text: string): unknown {
   } catch {
     throw new CuratorError('validation_error', 'Executor did not return valid JSON');
   }
+}
+
+/** Read native busy/idle timestamps as well as events so reloads cannot hide an active session. */
+export async function readCuratorSessionState(
+  sessions: Pick<Plugin.Context['session'], 'list'>,
+  directory: string,
+  internal: (sessionID: string) => boolean,
+) {
+  const listed: Array<Awaited<ReturnType<typeof sessions.list>>['data'][number]> = [];
+  let cursor: Awaited<ReturnType<typeof sessions.list>>['cursor']['next'];
+  for (let page = 0; page < 100; page++) {
+    const result = await sessions.list({
+      directory,
+      limit: 100,
+      order: 'desc',
+      archived: false,
+      cursor: cursor ?? undefined,
+    });
+    listed.push(
+      ...result.data.filter(
+        (info) =>
+          resolve(info.location.directory) === resolve(directory) &&
+          !info.id.startsWith('ses_curator_') &&
+          !internal(info.id) &&
+          info.metadata?.skill_curator_internal !== true,
+      ),
+    );
+    cursor = result.cursor.next;
+    if (!cursor) break;
+  }
+  // An unexpectedly large or changing archive must not turn a partial read into an idle verdict.
+  if (cursor) return { idle: false };
+  const recent = listed
+    .filter((info) => !info.parentID && info.model)
+    .sort((a, b) => b.time.updated - a.time.updated)[0];
+  return {
+    idle: listed.every((info) => !info.time.busy || (info.time.idle ?? 0) >= info.time.busy),
+    last_activity_at: Math.max(
+      0,
+      ...listed.flatMap((info) => [info.time.busy ?? 0, info.time.idle ?? 0]),
+    ),
+    ...(recent?.model
+      ? {
+          execution: {
+            provider: recent.model.providerID,
+            model: recent.model.id,
+            ...(recent.model.variant ? { variant: recent.model.variant } : {}),
+          },
+        }
+      : {}),
+  };
 }
 export default Plugin.define({
   id: 'opencode-skill-curator',
@@ -259,12 +311,14 @@ export default Plugin.define({
     // Authenticated events.replay is the authoritative event transport for external clients.
     const controller = new AbortController();
     const conversationReview = new ConversationReview(core.store, scope);
+    const curatorScheduler = new CuratorScheduler(core.store, scope);
     const toolCapture = await ctx.tool.hook('execute.after', (event) => {
       if (
         event.sessionID.startsWith('ses_curator_') ||
         core.store.get('control', 'internal:' + event.sessionID)
       )
         return;
+      curatorScheduler.activity(event.sessionID, 'tool-after:' + String(event.id));
       conversationReview.activity(event.sessionID, String(event.id));
       if (core.settings.get(scope).settings.conversation_review.enabled) return;
       if (event.status !== 'completed') return;
@@ -297,6 +351,7 @@ export default Plugin.define({
           'session.execution.succeeded',
           'session.execution.failed',
           'session.execution.interrupted',
+          'session.tool.called',
           'session.skill.activated',
         ],
         signal: controller.signal,
@@ -308,6 +363,8 @@ export default Plugin.define({
           core.store.get('control', 'internal:' + sessionID)
         )
           continue;
+        curatorScheduler.activity(sessionID, event.type + ':' + String(event.id));
+        if (event.type === 'session.tool.called') continue;
         if (event.type === 'session.skill.activated') {
           const skill = core.catalog.list(scope).find((s) => s.name === event.data.name);
           if (skill)
@@ -340,7 +397,6 @@ export default Plugin.define({
         core.store.emit('health.changed', scope, 'opencode', 'capture', { status: 'disconnected' });
     });
     let ticking = false;
-    let lastReview = Date.now();
     const tick = async () => {
       if (ticking || controller.signal.aborted) return;
       ticking = true;
@@ -444,18 +500,22 @@ export default Plugin.define({
             }
           }
         }
-        if (
-          settings.curator.enabled &&
-          !paused?.curator &&
-          Date.now() - lastReview >= settings.curator.interval_hours * 3600000
-        ) {
-          await core.call(
-            'curator.lifecycle_run',
-            { idempotency_key: 'lifecycle:' + new Date().toISOString().slice(0, 13) },
-            local,
-          );
-          lastReview = Date.now();
-        }
+        await curatorScheduler.drain({
+          settings,
+          paused: Boolean(paused?.curator),
+          readState: () =>
+            readCuratorSessionState(ctx.session, ctx.location.directory, (sessionID) =>
+              Boolean(core.store.get('control', 'internal:' + sessionID)),
+            ),
+          lifecycle: (idempotencyKey) =>
+            core.call('curator.lifecycle_run', { idempotency_key: idempotencyKey }, local),
+          optimize: async (idempotencyKey, execution) =>
+            (await core.call(
+              'curator.optimize',
+              { idempotency_key: idempotencyKey, execution },
+              local,
+            )) as { run_id: string; jobs: Array<{ job_id: string }> },
+        });
         core.learning.prune(scope);
         await core.tick();
       } catch {

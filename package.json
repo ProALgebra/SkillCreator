@@ -1,6 +1,6 @@
 {
   "name": "opencode-skill-curator",
-  "version": "0.2.1",
+  "version": "0.3.1",
   "description": "Durable, proposal-first skill management for OpenCode and external workers",
   "type": "module",
   "license": "MIT",
@@ -38,6 +38,7 @@
     "test:tui": "bun --conditions=browser test/tui-smoke.ts",
     "test:live": "node scripts/live-smoke.mjs",
     "test:refine:live": "node scripts/refine-live.mjs",
+    "test:optimizer:live": "node scripts/optimizer-live.mjs",
     "test:package": "node scripts/package-smoke.mjs"
   },
   "dependencies": {

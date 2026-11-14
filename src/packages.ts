@@ -280,6 +280,16 @@ export class PackageStore {
   diskHash(skill: Skill): string | undefined {
     const path = this.path(skill, skill.skill_id);
     this.check(path);
-    return existsSync(path) ? hash(this.read(path)) : undefined;
+    if (!existsSync(path)) return undefined;
+    const actual = this.read(path);
+    for (const [file, content] of Object.entries(actual)) {
+      const expected = skill.files[file];
+      // Base64 may encode ordinary UTF-8 as well as binary data. Preserve the
+      // stored representation only after comparing the actual file bytes, so a
+      // write/read round trip does not masquerade as a concurrent edit.
+      if (expected !== undefined && decodeFile(expected).equals(decodeFile(content)))
+        actual[file] = expected;
+    }
+    return hash(actual);
   }
 }

@@ -32,14 +32,14 @@
 | manager      | snapshot, refresh                                                                                                                                                                                        |
 | skills       | list, get, search, create, update, rename, clone, merge.preview, split.preview, archive, restore, pin, unpin, lock, unlock, adopt, unadopt, history, diff, rollback, import, export, usage, dependencies |
 | learning     | run, refine, sessions, ingest, candidates, backfill                                                                                                                                                      |
-| curator      | review, analyze_duplicates, lifecycle_run, update                                                                                                                                                        |
+| curator      | review, optimize, status, rollback, analyze_duplicates, lifecycle_run, update                                                                                                                            |
 | proposals    | list, get, validate, approve, reject, apply, cancel                                                                                                                                                      |
 | jobs         | list, get, run, pause, resume, cancel, retry, progress, logs, lease, heartbeat, complete, fail                                                                                                           |
 | executors    | list, status, test, set_policy                                                                                                                                                                           |
 | stats        | overview, learning, skills, costs                                                                                                                                                                        |
 | audit/events | audit.list, events.replay                                                                                                                                                                                |
 
-Все 77 методов зарегистрированы. Используется единая строгая input schema: неизвестные поля запрещены; обязательность отдельных аргументов дополнительно проверяется обработчиком. Рабочий список и Zod schemas находятся в `src/rpc.ts`.
+Все 80 методов зарегистрированы. Используется единая строгая input schema: неизвестные поля запрещены; обязательность отдельных аргументов дополнительно проверяется обработчиком. Рабочий список и Zod schemas находятся в `src/rpc.ts`.
 
 ## Аргументы операций
 
@@ -132,3 +132,5 @@ Review/update output: `{"updates":[{"skill_id":"...","files":{"SKILL.md":"..."},
 События имеют `event_id`, `occurred_at`, tenant/workspace, actor, correlation_id, entity_id, entity_revision?, details. Обязательные skill/proposal/job/settings/manager/health события сохраняются в `events` и `audit_log`. Текущая безопасная внешняя доставка — `events.replay`; клиент дедуплицирует по event_id и продолжает пагинацию. `manager.open` не является удалённой операцией: открытие route принадлежит локальному TUI.
 
 Коды ошибок: unauthorized, forbidden, not_found, validation_error, revision_conflict, scope_violation, locked_skill, readonly_skill, executor_unavailable, rate_limited, budget_exceeded, idempotency_conflict, lease_expired, unknown_outcome, internal_error. SDK использует свой declared error envelope; HTTP bridge переводит его в `{"error":{"code":"...","message":"..."}}`.
+
+Оптимизация библиотеки (`curator.optimize/status/rollback`), схема плана, пагинация и policy описаны в [CURATOR.md](CURATOR.md).

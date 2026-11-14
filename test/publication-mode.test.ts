@@ -50,6 +50,7 @@ test('publication mode is manual by default and its switch preserves independent
   assert.deepEqual(automatic.settings.approval, {
     mode: 'auto',
     allow_auto_create: true,
+    allow_auto_merge: false,
     allow_auto_patch_managed_low_risk: true,
     allow_auto_archive_managed: true,
     protect_manual_skills: true,
@@ -64,6 +65,7 @@ test('publication mode is manual by default and its switch preserves independent
   assert.deepEqual(manual.settings.approval, {
     mode: 'manual',
     allow_auto_create: false,
+    allow_auto_merge: false,
     allow_auto_patch_managed_low_risk: false,
     allow_auto_archive_managed: true,
     protect_manual_skills: true,

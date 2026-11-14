@@ -37,12 +37,19 @@ export const settingsSchema = z
       .object({
         enabled: z.boolean(),
         interval_hours: z.number().positive(),
+        min_idle_hours: z.number().nonnegative(),
+        max_batch_skills: z.number().int().min(2).max(50),
+        max_batches_per_run: z.number().int().min(1).max(50),
+        provider: z.string().min(1).max(240).optional(),
+        model: z.string().min(1).max(240).optional(),
+        variant: z.string().min(1).max(240).optional(),
         llm_review_enabled: z.boolean(),
         stale_after_days: positive,
         archive_after_days: positive,
         archive_requires_evidence: z.boolean(),
       })
-      .strict(),
+      .strict()
+      .refine((v) => Boolean(v.provider) === Boolean(v.model), 'Set provider and model together'),
     execution: z
       .object({
         default_mode: mode,
@@ -60,6 +67,7 @@ export const settingsSchema = z
       .object({
         mode: z.enum(['manual', 'safe', 'auto']),
         allow_auto_create: z.boolean(),
+        allow_auto_merge: z.boolean(),
         allow_auto_patch_managed_low_risk: z.boolean(),
         allow_auto_archive_managed: z.boolean(),
         protect_manual_skills: z.literal(true),
@@ -112,6 +120,9 @@ export const defaults: Settings = {
   curator: {
     enabled: true,
     interval_hours: 168,
+    min_idle_hours: 2,
+    max_batch_skills: 8,
+    max_batches_per_run: 8,
     llm_review_enabled: false,
     stale_after_days: 30,
     archive_after_days: 90,
@@ -129,6 +140,7 @@ export const defaults: Settings = {
   approval: {
     mode: 'manual',
     allow_auto_create: false,
+    allow_auto_merge: false,
     allow_auto_patch_managed_low_risk: false,
     allow_auto_archive_managed: false,
     protect_manual_skills: true,

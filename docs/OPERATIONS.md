@@ -6,7 +6,7 @@
 
 `local_service_auth` выключен по умолчанию. Для локального сервиса и TUI одного пользователя ОС задайте `local_service_auth: true`: capability выводится из существующего пароля OpenCode в `${XDG_CONFIG_HOME:-~/.config}/opencode/service.json`. Файл должен быть обычным, без symlink и дополнительных hardlinks; на POSIX проверяются владелец и отсутствие доступа группы/остальных. Файл не создаётся и не изменяется плагином. Явный токен из `token_env` (по умолчанию `SKILL_CURATOR_TOKEN`) имеет приоритет. Для удалённых клиентов и отдельных workers используйте собственные env-токены и bindings в `credentials`.
 
-В текущей установке глобальный `~/.config/opencode/opencode.jsonc` подключает пакет `~/.local/share/opencode/skill-curator-runtime/releases/0.2.1-b0438569a32f` с `local_service_auth: true`. Резервная копия прежней конфигурации сохранена рядом с ней. После замены установленной сборки выполните `opencode reload`, затем проверьте `system.health`. Для каждого API-вызова выбирайте проект через штатные request options `location`; поле `scope.directory` не заменяет выбор location. Результаты подключения приведены в [отчёте установки](INSTALLATION_CHECK.md).
+В текущей установке глобальный `~/.config/opencode/opencode.jsonc` подключает пакет `~/.local/share/opencode/skill-curator-runtime/releases/0.3.1-a15497222b92` с `local_service_auth: true`. Резервная копия прежней конфигурации сохранена рядом с ней. После замены установленной сборки выполните `opencode reload`, затем проверьте `system.health`. Для каждого API-вызова выбирайте проект через штатные request options `location`; поле `scope.directory` не заменяет выбор location. Результаты подключения приведены в [отчёте установки](INSTALLATION_CHECK.md).
 
 Рабочие настройки меняются через `settings.get` → `settings.patch({expected_revision,patch,idempotency_key})`. Слои global → tenant → workspace наследуются как patches; `settings_level` выбирает слой, reset снимает его overrides. Global write разрешён только server-bound global_admin. Схема и defaults: `src/settings.ts`. Примеры patch: `examples/settings.standalone.json`, `examples/settings.valeria.json`.
 
@@ -55,6 +55,8 @@ try {
 Установка этой среды использует каталог версии в `~/.local/share/opencode/skill-curator-runtime/releases/` вне node_modules. OpenCode 2.3 не инвалидирует кеш транзитивных импортов внутри node_modules при обычном reload. Для обновления выбирайте новый каталог версии и переключайте package в server/CLI-конфигурациях; затем выполните `opencode reload`.
 
 ## Troubleshooting
+
+Менеджер показывает навыки текущего проекта, включая встроенные источники OpenCode с виртуальными путями `skill://`. Такие источники доступны для просмотра как readonly; API-снимок без полного пакета отмечается `incomplete_source` и не публикуется как управляемая копия. Переключение проекта меняет каталог. Если в выбранном состоянии нет записей, проверьте вкладки и строку поиска.
 
 | Состояние                     | Действие                                                                                                                                                                                                                  |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

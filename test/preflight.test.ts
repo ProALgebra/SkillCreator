@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { CuratorError, ensure } from '../src/errors.js';
 import { ExecutorPreflightError, type Job } from '../src/jobs.js';
 import type { Skill } from '../src/types.js';
-import { fixture, pack, scope } from './helpers.js';
+import { fixture, pack, scope, code } from './helpers.js';
 
-test('a preflight revision conflict releases its budget and allows the next queued job', async (t) => {
+test('a preflight revision conflict releases its budget and allows the next job', async (t) => {
   let providerCalls = 0;
   let fallbackCalls = 0;
   const { core, call } = fixture(t, {
@@ -48,11 +48,18 @@ test('a preflight revision conflict releases its budget and allows the next queu
     expected_revision: skill.revision,
     files: pack('preflight-source', 'An updated, verified procedure.'),
   });
+  await assert.rejects(
+    call('curator.review', {
+      skill_ids: [skill.skill_id],
+      execution: { mode: 'direct' },
+    }),
+    code('budget_exceeded'),
+  );
+  await core.tick();
   const next = (await call('curator.review', {
     skill_ids: [skill.skill_id],
     execution: { mode: 'direct' },
   })) as Job;
-
   await core.tick();
 
   const failed = core.jobs.get(scope, stale.job_id);
