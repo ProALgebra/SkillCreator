@@ -71,6 +71,7 @@ Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked co
 42. [x] Rewrite the README for plugin users, translate the task history, and add concise contributor and release documentation.
 43. [x] Check the repository for untranslated text, broken local links, formatting errors, and regressions; verify the build and npm package.
 44. [x] Commit the complete English-language repository and record the final verification results. The commit includes all 26 changed files, English contribution templates, release notes, and version 0.3.2; formatting and staged diff checks passed.
+45. [x] Push the pending commits to `origin/master`, record publication, and verify that the local and remote branches match. Conversation review, automatic curation, manager fixes, and English release 0.3.2 were pushed; the remote SHA was confirmed against local HEAD.
 
 ## Verification history and design decisions
 
