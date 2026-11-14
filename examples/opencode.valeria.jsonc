@@ -1,0 +1,33 @@
+{
+  "plugins": [
+    {
+      "package": "/absolute/path/to/skillCreator",
+      "options": {
+        "tenant_id": "team-a",
+        "workspace_id": "my-project",
+        "token_env": "SKILL_CURATOR_TOKEN",
+        "credentials": [
+          {
+            "env": "VALERIA_EDITOR_TOKEN",
+            "principal": {
+              "subject": "valeria-ui",
+              "tenant_id": "team-a",
+              "workspace_ids": ["my-project"],
+              "roles": ["viewer", "editor", "curator"],
+            },
+          },
+          {
+            "env": "VALERIA_WORKER_TOKEN",
+            "principal": {
+              "subject": "valeria-worker-1",
+              "tenant_id": "team-a",
+              "workspace_ids": ["my-project"],
+              "roles": ["worker"],
+              "worker_kind": "valeria",
+            },
+          },
+        ],
+      },
+    },
+  ],
+}

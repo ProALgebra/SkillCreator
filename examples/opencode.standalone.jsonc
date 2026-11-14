@@ -1,0 +1,13 @@
+{
+  "plugins": [
+    {
+      "package": "/absolute/path/to/skillCreator",
+      "options": {
+        "tenant_id": "local",
+        "workspace_id": "my-project",
+        "token_env": "SKILL_CURATOR_TOKEN",
+        "source_roots": [],
+      },
+    },
+  ],
+}

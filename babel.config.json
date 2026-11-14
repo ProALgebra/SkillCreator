@@ -1,0 +1,1 @@
+{ "presets": [["babel-preset-solid", { "moduleName": "@opentui/solid", "generate": "universal" }]] }

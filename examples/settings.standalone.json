@@ -1,0 +1,6 @@
+{
+  "execution": { "default_mode": "auto", "auto_preferred_modes": ["direct", "session"] },
+  "valeria_bridge": { "enabled": false },
+  "external_bridge": { "enabled": false },
+  "approval": { "mode": "manual" }
+}

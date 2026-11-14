@@ -1,0 +1,10 @@
+{
+  "valeria_bridge": { "enabled": true, "lease_seconds": 120 },
+  "execution": {
+    "default_mode": "auto",
+    "auto_preferred_modes": ["direct", "session", "valeria"],
+    "operation_modes": { "learning": "direct", "review": "session", "merge": "valeria" }
+  },
+  "privacy": { "send_raw_transcripts_to_external": false },
+  "approval": { "mode": "manual" }
+}
