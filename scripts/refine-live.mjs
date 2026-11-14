@@ -36,7 +36,7 @@ try {
   });
   await client.session.prompt({
     sessionID: source.id,
-    text: 'Это запись реально проверенного процесса в проекте. При обновлении локального плагина OpenCode 2.3 обычный reload не заменял транзитивные модули внутри node_modules. Решение: собрать и проверить пакет; распаковать его в отдельный releases/<version>-<hash> вне node_modules; сохранить прежнюю конфигурацию; обновить путь пакета в серверной и CLI-конфигурации, сохранив остальные плагины; выполнить opencode reload; проверить RPC system.health и видимость навыка через native skill.list. После переноса в releases новая сборка была загружена, health и skill lifecycle проверки прошли. Этот процесс полезен при повторных локальных обновлениях плагинов. Не выполняй никаких инструментов. Ответь только: Принято.',
+    text: 'This is a record of a workflow verified in this project. When updating a local OpenCode 2.3 plugin, a normal reload did not replace transitive modules inside node_modules. The solution was to build and validate the package, extract it into a separate releases/<version>-<hash> directory outside node_modules, back up the previous configuration, update the package path in both the server and CLI configurations while preserving other plugins, run opencode reload, then check the system.health RPC and skill visibility through native skill.list. After moving the package into releases, the new build loaded, and the health and skill lifecycle checks passed. This workflow is useful for repeated local plugin upgrades. Do not use any tools. Reply with only: Acknowledged.',
   });
   await client.experimental.session.wait(
     { sessionID: source.id },

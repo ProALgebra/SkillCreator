@@ -201,21 +201,21 @@ try {
   screen = await testRender(() => page.render(), { width: 130, height: 30 });
   const frame = await screen.waitForFrame((frame) => frame.includes('visible-tui-skill'));
   assert.ok(frame.includes('Skill Curator'));
-  assert.ok(frame.includes('Показано 2 из 2'));
-  assert.ok(frame.includes('Открыть действия · visible-tui-skill'));
+  assert.ok(frame.includes('Showing 2 of 2'));
+  assert.ok(frame.includes('Open actions · visible-tui-skill'));
   assert.equal(
     requests.filter((request) => request.method === 'manager.refresh').length,
     1,
     'Opening the manager synchronizes discovered skills once',
   );
   await managerKey('down');
-  await screen.waitForFrame((frame) => frame.includes('Открыть действия · zz-tui-skill'));
+  await screen.waitForFrame((frame) => frame.includes('Open actions · zz-tui-skill'));
   await managerKey('enter');
   assert.equal(selectionDialogs.at(-1)?.title, 'zz-tui-skill · revision 1');
   await managerKey('up');
-  await screen.waitForFrame((frame) => frame.includes('Открыть действия · visible-tui-skill'));
+  await screen.waitForFrame((frame) => frame.includes('Open actions · visible-tui-skill'));
   await clickText('zz-tui-skill · r1');
-  await screen.waitForFrame((frame) => frame.includes('Открыть действия · zz-tui-skill'));
+  await screen.waitForFrame((frame) => frame.includes('Open actions · zz-tui-skill'));
 
   const updated = (await core.call(
     'skills.update',
@@ -245,11 +245,11 @@ try {
   closeDialog();
   await pendingAction;
   deferSelection = undefined;
-  assert.ok(screen.captureCharFrame().includes('Открыть действия · zz-tui-skill'));
+  assert.ok(screen.captureCharFrame().includes('Open actions · zz-tui-skill'));
 
   await managerKey('ctrl+f');
   await screen.mockInput.typeText('zz-tui');
-  await screen.waitForFrame((frame) => frame.includes('Показано 1 из 1'));
+  await screen.waitForFrame((frame) => frame.includes('Showing 1 of 1'));
   const beforeSearchEnter = selectionDialogs.length;
   screen.mockInput.pressEnter();
   await screen.flush();
@@ -258,28 +258,26 @@ try {
   assert.equal(selectionDialogs.at(-1)?.title, 'zz-tui-skill · revision 2');
   await managerKey('ctrl+f');
   await screen.mockInput.typeText('-missing');
-  const emptySearch = await screen.waitForFrame((frame) => frame.includes('найдены. Измените'));
-  assert.ok(emptySearch.includes('Показано 0 из 0'));
-  assert.ok(!emptySearch.includes('Выберите навык.'));
-  assert.ok(!emptySearch.includes('Открыть действия'));
+  const emptySearch = await screen.waitForFrame((frame) => frame.includes('No skills match'));
+  assert.ok(emptySearch.includes('Showing 0 of 0'));
+  assert.ok(!emptySearch.includes('Select a skill.'));
+  assert.ok(!emptySearch.includes('Open actions'));
   await screen.mockInput.pressKeys(
     Array.from({ length: 'zz-tui-missing'.length }, () => 'BACKSPACE'),
   );
   screen.mockInput.pressEnter();
-  await screen.waitForFrame((frame) => frame.includes('Показано 2 из 2'));
+  await screen.waitForFrame((frame) => frame.includes('Showing 2 of 2'));
   await clickText('archived');
-  const emptyState = await screen.waitForFrame((frame) =>
-    frame.includes('В разделе archived нет навыков'),
-  );
-  assert.ok(emptyState.includes('Показано 0 из 0'));
-  assert.ok(!emptyState.includes('Открыть действия'));
+  const emptyState = await screen.waitForFrame((frame) => frame.includes('No skills in archived'));
+  assert.ok(emptyState.includes('Showing 0 of 0'));
+  assert.ok(!emptyState.includes('Open actions'));
   await clickText('active');
-  await screen.waitForFrame((frame) => frame.includes('Показано 2 из 2'));
+  await screen.waitForFrame((frame) => frame.includes('Showing 2 of 2'));
 
   let finishLoad!: () => void;
   deferCatalog = new Promise((resolve) => (finishLoad = resolve));
   const loadingRefresh = managerKey('ctrl+r');
-  await screen.waitForFrame((frame) => frame.includes('Загрузка каталога…'));
+  await screen.waitForFrame((frame) => frame.includes('Loading catalog…'));
   const beforeLoadingEnter = selectionDialogs.length;
   await managerKey('enter');
   assert.equal(selectionDialogs.length, beforeLoadingEnter);
@@ -288,8 +286,8 @@ try {
   deferCatalog = undefined;
   viewer = true;
   await managerKey('ctrl+r');
-  const readonlyFrame = await screen.waitForFrame((frame) => frame.includes('Режим чтения:'));
-  assert.ok(readonlyFrame.includes('Показано 2 из 2'));
+  const readonlyFrame = await screen.waitForFrame((frame) => frame.includes('Read-only:'));
+  assert.ok(readonlyFrame.includes('Showing 2 of 2'));
   viewer = false;
   await managerKey('ctrl+r');
 
@@ -304,8 +302,8 @@ try {
     owner,
   );
   await managerKey('ctrl+r');
-  await screen.waitForFrame((frame) => frame.includes('Показано 1 из 1'));
-  assert.ok(screen.captureCharFrame().includes('Открыть действия · visible-tui-skill'));
+  await screen.waitForFrame((frame) => frame.includes('Showing 1 of 1'));
+  assert.ok(screen.captureCharFrame().includes('Open actions · visible-tui-skill'));
   const archived = (await core.call('skills.get', { skill_id: second.skill_id }, owner)) as any;
   await core.call(
     'skills.restore',
@@ -335,7 +333,7 @@ try {
   await managerKey('ctrl+r');
   for (let index = 0; index < 20; index++) await managerKey('down');
   const scrolled = await screen.waitForFrame((frame) => frame.includes('› zz-tui-skill'));
-  assert.ok(scrolled.includes('Открыть действия · zz-tui-skill'));
+  assert.ok(scrolled.includes('Open actions · zz-tui-skill'));
   for (let index = 0; index < 20; index++) await managerKey('up');
   await screen.waitForFrame((frame) => frame.includes('› scrolling-tui-0'));
   assert.ok(locations.length > 0);
@@ -356,7 +354,7 @@ try {
   const initialSettings = (await core.call('settings.get', {}, owner)) as any;
   selections.push(undefined);
   await publication();
-  assert.ok(selectionDialogs.at(-1)?.title.includes('ручная'));
+  assert.ok(selectionDialogs.at(-1)?.title.includes('manual'));
   selections.push('manual');
   await publication();
   assert.equal(publicationRequests().length, 0, 'Cancel and unchanged mode must not mutate');
@@ -372,10 +370,10 @@ try {
   assert.equal(automaticSettings.settings.approval.allow_auto_create, true);
   assert.equal(automaticSettings.settings.approval.allow_auto_patch_managed_low_risk, true);
   assert.equal(toasts.at(-1)?.variant, 'success');
-  assert.ok(toasts.at(-1)?.message.includes('Автоматическая публикация'));
+  assert.ok(toasts.at(-1)?.message.includes('Automatic publication'));
   selections.push('auto');
   await publication();
-  assert.ok(selectionDialogs.at(-1)?.title.includes('автоматическая'));
+  assert.ok(selectionDialogs.at(-1)?.title.includes('automatic'));
   assert.equal(publicationRequests().length, 1, 'An unchanged automatic mode must not mutate');
   selections.push('manual');
   await publication();
@@ -386,7 +384,7 @@ try {
   assert.equal(manualSettings.settings.approval.mode, 'manual');
   assert.equal(manualSettings.settings.approval.allow_auto_create, false);
   assert.equal(manualSettings.settings.approval.allow_auto_patch_managed_low_risk, false);
-  assert.ok(toasts.at(-1)?.message.includes('ручная публикация'));
+  assert.ok(toasts.at(-1)?.message.includes('Manual publication'));
   rejectPublication = true;
   selections.push('auto');
   await publication();
@@ -471,7 +469,7 @@ try {
   prompts.push('[]');
   await optimize();
   assert.equal(toasts.at(-1)?.variant, 'error');
-  assert.ok(toasts.at(-1)?.message.includes('JSON-объектом'));
+  assert.ok(toasts.at(-1)?.message.includes('JSON object'));
   selections.push('auto_merge', 'auto');
   await optimize();
   const mergePolicy = requests.filter((request) => request.method === 'settings.patch').at(-1)!;
@@ -615,7 +613,7 @@ try {
   route = { type: 'home' };
   history = [];
   await refine();
-  assert.ok(alerts.at(-1)?.message.includes('нет доступных переписок'));
+  assert.ok(alerts.at(-1)?.message.includes('No conversations are available'));
   history = [{ session_id: 'ses_previous', title: 'Previous completed conversation' }];
   selections.push('ses_previous', 'auto');
   prompts.push('');

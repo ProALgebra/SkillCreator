@@ -1,94 +1,108 @@
-# План реализации OpenCode Skill Curator
+# OpenCode Skill Curator implementation plan
 
-Источник требований: `OpenCode_Skill_Curator_TZ.md`. План создан до реализации.
-Статусы: `[ ] pending`, `[-] in_progress`, `[x] completed`. Завершение отмечается после проверки результата.
+Requirements: [original specification](docs/SPECIFICATION.md). This plan was created before implementation.
+Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked complete after their results have been verified.
 
-1. [x] Изучить ТЗ, проверить доступный SDK OpenCode и определить архитектуру, границы совместимости и критерии проверки.
-2. [x] Создать TypeScript/npm-пакет, конфигурацию сборки, публичные типы и RPC-контракт.
-3. [x] Реализовать долговременное транзакционное хранилище, миграции, версии, аудит, события и восстановление.
-4. [x] Реализовать каталог и безопасную работу с полными пакетами навыков: discovery, CRUD, archive/restore, pin/lock/adopt, export/import, rollback.
-5. [x] Реализовать immutable proposals, diff/validation/approval/apply, merge/split и контроль конфликтов/политик.
-6. [x] Реализовать jobs, маршрутизацию исполнителей, лимиты, отмену/повтор, durable leases и worker API.
-7. [x] Реализовать сбор/импорт истории, дедупликацию, очистку секретов, Learner и детерминированный/LLM Curator.
-8. [x] Подключить авторизацию tenant/workspace, все RPC-методы, идемпотентность, настройки и наблюдаемость.
-9. [x] Реализовать адаптер OpenCode, команды и TUI-менеджер на общих серверных методах.
-10. [x] Добавить документацию архитектуры, установки, безопасности, backup/restore, примеры конфигурации и клиентов TypeScript/Python.
-11. [x] Добавить CI и выполнить unit/integration/contract/security/recovery/e2e проверки; устранить найденные ошибки.
-12. [x] Проверить сборку и состав npm-пакета, сверить результат с ТЗ, зафиксировать фактические ограничения и итог проверок.
+1. [x] Review the specification, inspect the available OpenCode SDK, and define the architecture, compatibility boundaries, and acceptance criteria.
+2. [x] Create the TypeScript/npm package, build configuration, public types, and RPC contract.
+3. [x] Implement durable transactional storage, migrations, versions, audit records, events, and recovery.
+4. [x] Implement the catalog and safe handling of complete skill packages: discovery, CRUD, archive/restore, pin/lock/adopt, export/import, and rollback.
+5. [x] Implement immutable proposals, diff/validation/approval/apply, merge/split, and conflict and policy checks.
+6. [x] Implement jobs, executor routing, limits, cancellation/retry, durable leases, and the worker API.
+7. [x] Implement history capture/import, deduplication, secret redaction, the Learner, and deterministic/LLM curation.
+8. [x] Connect tenant/workspace authorization, all RPC methods, idempotency, settings, and observability.
+9. [x] Implement the OpenCode adapter, commands, and TUI manager using shared server methods.
+10. [x] Document architecture, installation, security, and backup/restore; add configuration examples and TypeScript/Python clients.
+11. [x] Add CI and run unit, integration, contract, security, recovery, and end-to-end checks; fix identified issues.
+12. [x] Verify the build and npm package contents against the specification; record actual limitations and verification results.
 
-## Подключение к установленному OpenCode
+## Installation in OpenCode
 
-13. [x] Найти установленный OpenCode, проверить версию, конфигурацию и работающий сервис. Обнаружен OpenCode 2.3.0 и локальный background service.
-14. [x] Настроить постоянную локальную авторизацию, добавить плагин в пользовательскую конфигурацию и проверить загрузку сервером. Плагин загружен; реальный RPC health подтверждает native SQLite и доступность direct/session.
-15. [x] Проверить реальные RPC, создание/видимость/архивирование тестового навыка, TUI и доступный LLM-executor; исправить выявленные ошибки.
-16. [x] Повторить необходимые проверки, обновить пакет и документацию, зафиксировать результат живой интеграции.
+13. [x] Locate the installed OpenCode and inspect its version, configuration, and running service. OpenCode 2.3.0 and a local background service were found.
+14. [x] Configure persistent local authentication, add the plugin to the user configuration, and verify server loading. Live health RPC confirmed native SQLite and direct/session availability.
+15. [x] Verify live RPC calls, test-skill creation/visibility/archiving, the TUI, and an available LLM executor; fix identified issues.
+16. [x] Repeat the required checks, update the package and documentation, and record live integration results.
 
-## Публикация в GitHub
+## Initial GitHub publication
 
-17. [x] Подключить `git@github.com:ProALgebra/SkillCreator.git`, проверить существующую ветку и сохранить историю репозитория. Сохранены исходный коммит и MIT-лицензия ProALgebra; рабочая ветка — master.
-18. [x] Подготовить файлы к публикации, проверить исключения и отсутствие секретов, выполнить проверки перед коммитом. Проверены форматирование, состав npm-пакета, portable paths и исключение локальных данных; MIT-лицензия исходного репозитория сохранена.
-19. [x] Создать коммит, отправить его в GitHub и проверить совпадение локального и удалённого коммита. Плагин опубликован коммитом `70d8c83` в `origin/master`; SHA удалённой ветки подтверждён.
+17. [x] Connect `git@github.com:ProALgebra/SkillCreator.git`, inspect the existing branch, and preserve repository history. The initial commit and ProALgebra MIT license were retained; the working branch is `master`.
+18. [x] Prepare the publication, inspect exclusions and secret handling, and run checks before committing. Formatting, npm contents, portable paths, and local-data exclusions were verified; the original MIT license was preserved.
+19. [x] Create a commit, push it to GitHub, and verify that local and remote commits match. Commit `70d8c83` was published to `origin/master`; the remote SHA was confirmed.
 
-## Анализ переписок по модели Hermes
+## Hermes-style conversation learning
 
-20. [x] Добавить анализ полного контекста выбранной переписки: сообщения, действия, ошибки, исправления и результаты; сохранить очистку секретов и проверяемые ссылки на источники. Проверены недоверенный immutable snapshot, redaction и явное сокращение большого контекста.
-21. [x] Научить анализатор предлагать новый навык или обновление подходящего существующего, учитывая версии и защиту ручных/заблокированных навыков. Проверены сохранение ресурсов пакета, захваченные revision/hash и защита manual/readonly/locked/pinned.
-22. [x] Добавить автоматический анализ после завершения ответа и накопления заданного числа действий; исключить повторы, внутренние сессии и незавершённые ответы. Порог — 10 действий на переписку; проверены restart, interruption, idle, backoff и неизвестные исходы.
-23. [x] Добавить `/skills-refine` для текущей или выбранной прошлой переписки и передачу выбранной модели. Headless OpenTUI проверяет текущую/историческую переписку, отмену, ошибки, location и модель.
-24. [x] Добавить отдельное разрешение автоматической публикации новых навыков; оставить подтверждение по умолчанию. Нужны одновременно `approval.mode=auto` и `allow_auto_create=true`.
-25. [x] Проверить сценарии, ограничения доступа, очистку секретов, дедупликацию и автоматический запуск; обновить документацию. Итог: 94 теста, typecheck/build, Bun, OpenTUI, форматирование и проверка npm-пакета прошли.
-26. [x] Обновить установленный плагин и проверить новые команды и анализ через реальный OpenCode. Установлена `0.2.0-48a202a3be56` в server/CLI; native `/skills-refine` открывает историю. Живые direct/session jobs завершены; тестовые переписки архивированы и предложения отменены. Health healthy, автопорог 10 действий, публикация manual, незавершённых jobs нет.
+20. [x] Analyze the full available context of a selected conversation: messages, actions, errors, corrections, and outcomes. Preserve redaction and traceable source references. Verified an untrusted immutable snapshot, redaction, and explicit truncation of large contexts.
+21. [x] Let the analyzer propose a new skill or update a suitable existing skill while respecting versions and protections. Verified package-resource preservation, captured revision/hash checks, and manual/readonly/locked/pinned protection.
+22. [x] Add automatic analysis after a completed reply and a configured number of actions. Exclude duplicates, internal sessions, and incomplete replies. The threshold is 10 actions per conversation; restart, interruption, idle, backoff, and uncertain outcomes were checked.
+23. [x] Add `/skills-refine` for the current or a selected past conversation, passing the selected model. Headless OpenTUI verifies current/history selection, cancellation, errors, location, and model routing.
+24. [x] Add separate permission for automatic publication of new skills while keeping approval as the default. Both `approval.mode=auto` and `allow_auto_create=true` are required.
+25. [x] Verify workflows, access boundaries, redaction, deduplication, and automatic triggering; update documentation. All 94 tests, typecheck/build, Bun, OpenTUI, formatting, and npm-package checks passed.
+26. [x] Update the installed plugin and verify commands and analysis in real OpenCode. Release `0.2.0-48a202a3be56` was installed for server/CLI; native `/skills-refine` opened history. Direct/session jobs completed; temporary conversations were archived and proposals canceled. Health was healthy, the threshold was 10 actions, publication was manual, and no jobs remained unfinished.
 
-## Переключение публикации
+## Publication controls
 
-27. [x] Добавить отдельный RPC и понятный переключатель ручной/автоматической публикации в TUI. `settings.set_publication_mode`, `/skills-publication`, «Настройки → Публикация навыков»; автоматический режим разрешает создание и обновление управляемых навыков, отключение возвращает ручное одобрение.
-28. [x] Проверить переключение режимов, права, revision/idempotency, автоматическую публикацию и возврат ручного подтверждения; обновить документацию и установленный плагин. 102 теста, build, Bun/OpenTUI и npm-пакет прошли. Установлена `0.2.1-b0438569a32f`; в живом RPC проверены preview, auto/manual и replay, в native TUI открыт диалог `/skills-publication`. После проверки восстановлен исходный manual.
-29. [x] Сделать коммит с анализом переписок и переключателем публикации после необходимых проверок. Создан `feat: add conversation review and publication mode controls`; 102 теста и дополнительные проверки прошли.
+27. [x] Add a dedicated RPC and a clear manual/automatic publication switch in the TUI. Implemented `settings.set_publication_mode`, `/skills-publication`, and Settings → Skill publication. Automatic mode allows creation and eligible managed-skill updates; disabling it restores manual approval.
+28. [x] Verify mode switching, roles, revision/idempotency, automatic publication, and restoration of approval; update documentation and the installed plugin. All 102 tests, build, Bun/OpenTUI, and package checks passed. Release `0.2.1-b0438569a32f` was installed; live RPC verified preview, auto/manual, and replay, and native TUI opened the publication dialog. The original manual policy was restored.
+29. [x] Commit conversation review and publication controls after verification. Created `feat: add conversation review and publication mode controls`; all 102 tests and supplementary checks passed.
 
-## Автоматический куратор и оптимизация библиотеки
+## Automatic curator and library optimization
 
-30. [x] Подключить `curator.llm_review_enabled` к фоновому планировщику: запуск после заданного интервала во время простоя, долговременное хранение даты и состояния последнего прохода, учёт пауз, бюджетов и незавершённых заданий.
-31. [x] Реализовать смысловой анализ библиотеки по описаниям, содержимому полных пакетов и статистике использования. Находить пересечения, выбирать действия «оставить / улучшить / объединить / архивировать»; обрабатывать большую библиотеку частями в пределах контекста и бюджета.
-32. [x] Добавить настоящее смысловое объединение нескольких навыков в один связный компактный навык: удалять повторы, сохранять полезные инструкции, условия применения и ограничения; переносить необходимые скрипты, шаблоны, references/assets и исправлять относительные ссылки.
-33. [x] Реализовать структурированный проверяемый план оптимизации через immutable proposals: проверять scope, права, revision/hash, lock/pin, зависимости и сохранность пакетов. После объединения переводить исходники в `superseded`, сохранять версии, аудит и возможность восстановления.
-34. [x] Добавить отдельное разрешение `allow_auto_merge` для автоматического применения объединений с учётом режима публикации. Обеспечить идемпотентность проходов и защиту от повторного создания одинаковых планов и объединений; сохранять отдельную политику архивирования.
-35. [x] Добавить управление куратором в RPC и TUI: команду `/skills-optimize`, запуск сейчас, предварительный просмотр без изменений, расписание, паузу, статус, отчёт и откат. Показывать затронутые навыки, изменение числа активных навыков и размера библиотеки.
-36. [x] Проверить автоматический цикл: смысловые пересечения и сохранение полезных инструкций, ресурсы и ссылки, защищённые навыки, конфликты правок, рестарты, дедупликацию, сбои модели и превышение бюджета. Обновить документацию, проверить пакет и интеграцию с установленным OpenCode. Пройдены 144 теста, build/Bun/OpenTUI/package/format; установлена 0.3.0, реальное объединение и одобренный откат проверены через DeepSeek, `/skills-optimize` открыта в native TUI. Финальный health healthy, незавершённых jobs нет.
+30. [x] Connect `curator.llm_review_enabled` to the background scheduler: run after the configured interval during inactivity, persist the latest pass state and timestamps, and respect pauses, budgets, and unfinished jobs.
+31. [x] Implement semantic library analysis using descriptions, complete package contents, and usage statistics. Identify overlap and select keep/patch/merge/archive actions; process large libraries in batches within context and budget limits.
+32. [x] Implement semantic consolidation into coherent compact instructions: remove repetition, retain useful procedures, applicability conditions, and limitations, and preserve scripts/templates/references/assets with usable relative links.
+33. [x] Implement a structured, verifiable optimization plan through immutable proposals. Check scope, rights, revision/hash, lock/pin, dependencies, and package preservation. Applied merges supersede sources while retaining versions, audit records, and recovery.
+34. [x] Add separate `allow_auto_merge` permission subject to publication mode. Make passes idempotent, prevent duplicate plans and merges, and retain an independent archival policy.
+35. [x] Add curator RPC/TUI controls: `/skills-optimize`, run now, preview without changes, schedule, pause, status, reports, and rollback. Show affected skills and changes in active skill count and library size.
+36. [x] Verify the automatic cycle: overlap, instruction preservation, resources and links, protected skills, edit conflicts, restarts, deduplication, model failures, and budget limits. Update documentation and verify packaging and live OpenCode integration. All 144 tests and build/Bun/OpenTUI/package/format checks passed. Version 0.3.0 was installed; a real DeepSeek merge and approved rollback passed, and native `/skills-optimize` opened. Final health was healthy with no unfinished jobs.
 
-## Исправление выбора навыков в менеджере
+## Manager selection fix
 
-37. [x] Воспроизвести пустой каталог и проверить discovery встроенных навыков OpenCode, выбор мышью и с клавиатуры; исправить загрузку и понятное отображение пустого списка.
-38. [x] Проверить исправление тестами и в установленном OpenCode, обновить сборку и документацию. Пройдены 147 тестов Node, build, Bun/OpenTUI, format и npm package. Установлена 0.3.1-a15497222b92; в живом каталоге видны Browser/OpenCode/Report, в native TUI проверены выбор стрелками, Enter, поиск и открытие действий отфильтрованного навыка.
+37. [x] Reproduce the empty catalog and inspect built-in OpenCode discovery and mouse/keyboard selection. Fix loading and provide a clear empty state.
+38. [x] Verify the fix with tests and installed OpenCode; update the build and documentation. All 147 Node tests, build, Bun/OpenTUI, format, and package checks passed. Release `0.3.1-a15497222b92` was installed. Browser/OpenCode/Report appeared in the live catalog; native TUI verified arrow selection, Enter, search, and actions for a filtered skill.
 
-## Фиксация текущего состояния
+## Snapshot commit
 
-39. [x] Проверить состав текущих изменений и создать Git-коммит с автоматическим куратором, исправлениями менеджера и документацией версии 0.3.1. Все 37 файлов включены; локальные данные и конфигурация авторизации исключены, format:check и проверка diff прошли.
+39. [x] Inspect and commit automatic curation, manager fixes, and version 0.3.1 documentation. All 37 files were included; local data and authentication configuration were excluded. Formatting and diff checks passed.
 
-## Проверки и принятые решения
+## English documentation and repository presentation
 
-- Исходный каталог содержит только ТЗ; существующего кода, Git-репозитория и локальных соглашений нет.
-- Реальная версия SDK и поддерживаемые точки расширения проверяются перед выбором адаптера; неподтверждённые API не объявляются работающими.
-- Публикация в npm не выполнялась. Отправка в GitHub выполнена по отдельному запросу пользователя после локальной реализации и проверки установки.
-- Проверены официальные страницы OpenCode build/plugins (server, cli, rpc) и установлен реальный `@opencode/plugin@2.3.0` / `@opencode/client@2.3.0`. Используется Node.js 22.21.1;
-- Архитектура: независимое серверное ядро, SQLite/WAL, журнал публикаций полных пакетов, единая проверка прав для RPC/TUI/workers, LLM выдаёт только проверяемые предложения.
-- TypeScript-сборка серверной части, RPC и Solid/OpenTUI прошла; проверены реальные типы SDK. В SDK 2.3 direct generate возвращает только текст: встроенный адаптер учитывает полный резерв стоимости, точную стоимость предоставляет внешний executor.
-- Проверены lifecycle, merge с binary assets, approvals, revision/idempotency conflicts, lease/heartbeat/reconciliation, бюджеты, redaction и provenance. Crash recovery проверен прерыванием настоящего дочернего процесса; SDK adapter — contract tests.
-- Ограничение SDK 2.3: у RPC context нет authenticated principal и фильтрации private live events. Реализован capability envelope и авторизованный durable events.replay; приватный общий broadcast не используется.
-- Для первоначальной версии 0.1.0 `npm run check` прошёл: typecheck, **57 тестов**, build. Проверены HTTP/Python integration, global skills, наследование global/tenant/workspace settings и административное согласование unknown outcomes.
-- Дополнительно прошли `test:bun` (Bun 1.3.14, native SQLite lifecycle/restart/backup), `test:tui` (настоящий headless OpenTUI frame/каталог/slash-команды), `format:check` и `test:package` (exports и SQLite core из извлечённого tarball).
-- Создан `opencode-skill-curator-0.1.0.tgz`; server/tui/rpc exports присутствуют. В поставку не вошли node_modules, БД, токены, .env и Python cache. CI включает серверные, Bun/TUI и package проверки.
-- `npm audit --omit=dev`: 0 high/critical, 26 moderate transitive advisories закреплённого SDK/OpenTUI. Прямые Zod/YAML/diff обновлены.
-- При первоначальной сборке живая инсталляция не проверялась. После отдельного запроса пользователя OpenCode 2.3.0 подключён и проверен: native TUI, RPC, skill lifecycle, direct/session с DeepSeek. VALERIA по-прежнему проверена только на уровне контрактов. Подробности — `docs/INSTALLATION_CHECK.md`.
+40. [x] Translate all interface labels, messages, live-check fixtures, and matching UI assertions into English without changing behavior.
+41. [x] Translate the technical documentation and specification, use consistent terminology, and update documentation links.
+42. [x] Rewrite the README for plugin users, translate the task history, and add concise contributor and release documentation.
+43. [x] Check the repository for untranslated text, broken local links, formatting errors, and regressions; verify the build and npm package.
+44. [x] Commit the complete English-language repository and record the final verification results. The commit includes all 26 changed files, English contribution templates, release notes, and version 0.3.2; formatting and staged diff checks passed.
 
-- Первоначальная живая установка 0.1.0: сборка `skill-curator-runtime/releases/0.1.0-8d27edfd0f27`, server и CLI настроены, native TUI открыт; direct/session jobs DeepSeek завершены, явный HTTP 429 не блокирует очередь. 57 тестов и package/Bun/TUI проверки прошли.
-- Обновление 0.2.0: 94 теста и все дополнительные проверки прошли; собран `opencode-skill-curator-0.2.0.tgz`, установлена сборка `releases/0.2.0-48a202a3be56`. Полный отчёт и ограничения SDK — `docs/INSTALLATION_CHECK.md`.
+## Verification history and design decisions
 
-## Проверка автоматического куратора 0.3.0
+- The initial working directory contained only the specification, with no implementation, local Git repository, or project conventions.
+- SDK versions and supported extension points are inspected before selecting an adapter; unverified APIs are not described as working.
+- The package has not been published to npm. The initial GitHub push followed a separate user request after implementation and installation checks.
+- The official OpenCode build/plugin documentation for server, CLI, and RPC was checked. Actual `@opencode/plugin@2.3.0` and `@opencode/client@2.3.0` packages were installed; development used Node.js 22.21.1.
+- The architecture uses an independent server core, SQLite/WAL, a complete-package publication journal, shared RPC/TUI/worker authorization, and model-generated proposals subject to validation.
+- Server, RPC, and Solid/OpenTUI TypeScript builds passed against actual SDK types. SDK 2.3 direct generation returns text only: the built-in adapter consumes the full reserved budget; an external executor can supply exact costs.
+- Verified lifecycle, merges with binary assets, approvals, revision/idempotency conflicts, lease/heartbeat/reconciliation, budgets, redaction, and provenance. Crash recovery was tested by interrupting a real child process; the SDK adapter has contract tests.
+- SDK 2.3 RPC context lacks an authenticated principal and private live-event filtering. A capability envelope and authorized durable `events.replay` provide access control; private data is not broadcast globally.
+- Initial version 0.1.0 passed `npm run check`: typecheck, **57 tests**, and build. HTTP/Python integration, global skills, global/tenant/workspace inheritance, and administrative reconciliation of unknown outcomes were checked.
+- Supplementary checks passed: `test:bun` with Bun 1.3.14 for native SQLite lifecycle/restart/backup; real headless OpenTUI catalog/slash-command rendering; `format:check`; and exports/SQLite core from an extracted npm tarball.
+- Built `opencode-skill-curator-0.1.0.tgz` with server/tui/rpc exports. Dependencies, databases, tokens, `.env`, and Python caches were excluded. CI includes server, Bun/TUI, and package checks.
+- The recorded `npm audit --omit=dev` found no high/critical advisories and 26 moderate transitive advisories in the pinned SDK/OpenTUI. Direct Zod/YAML/diff dependencies were updated.
+- A live installation was not checked during the original build. After a separate installation request, OpenCode 2.3.0 was connected and tested for native TUI, RPC, skill lifecycle, and direct/session DeepSeek execution. VALERIA remains verified at the contract level; see [installation checks](docs/INSTALLATION_CHECK.md).
+- Initial live release `0.1.0-8d27edfd0f27` configured server/CLI, opened native TUI, and completed direct/session DeepSeek jobs. Explicit HTTP 429 rejection did not block the queue. All 57 tests and package/Bun/TUI checks passed.
+- Version 0.2.0 passed 94 tests and supplementary checks; `opencode-skill-curator-0.2.0.tgz` was built and `0.2.0-48a202a3be56` installed. The full report and SDK limitations are in [installation checks](docs/INSTALLATION_CHECK.md).
 
-- Пройдены **144 теста Node**, typecheck/build, Bun native SQLite, headless OpenTUI и проверка exports извлечённого npm-пакета.
-- Проверены смысловое объединение и сокращение инструкций, сохранение supporting resources и ссылок, manual/readonly/locked/pinned-защита, revision/hash-конфликты, идемпотентность, бюджеты, ошибки и восстановление после перезапуска. Dry-run оптимизатора не изменяет ни одну таблицу и durable cursor; ограниченные проходы продолжают обработку через cursor, слишком большие пакеты явно перечисляются в skipped.
-- Проверены права `curator.optimize`/`curator.rollback`, отдельная изоляция tenant и workspace, пауза куратора и всей системы, выключение работы, отклонение устаревшего revision и отката изменений без снимка оптимизатора. Откат создаёт отдельное предложение и требует одобрения.
-- В headless OpenTUI проверена `/skills-optimize`: выбранные execution/model/location, просмотр плана, отчёты, расписание, пауза/продолжение, подготовка отката, отмена и ошибки. Простой переключатель автоматической проверки управляет режимами «Выключена / Проверять устаревание / Смысловая оптимизация»; отдельное разрешение `allow_auto_merge` сохраняет текущую политику публикации.
-- Установлена сборка `releases/0.3.0-bc62fd43cf31` в server и CLI; `opencode reload` выполнен. В настоящем OpenCode direct job `17b240f3-2790-460e-b9e2-cd53d9571622` через DeepSeek `deepseek-flash` завершён, создано и одобрено одно объединение двух временных дублирующих навыков. Компактный `SKILL.md`, побайтное сохранение ресурсов и `superseded` исходников подтверждены; одобренный `curator.rollback` восстановил оба полных пакета. Все три временных навыка архивированы, аудит сохранён.
-- В настоящем native TUI команда `/skills-optimize` найдена через autocomplete и открыла диалог оптимизации с запуском, preview, статусом, автоматической проверкой, расписанием и разрешением автоматического объединения. Базовая живая проверка native `skill.list`, archive/restore и авторизации прошла. Финально: `system.health` — 0.3.0, healthy, `bun:sqlite`; manual, `allow_auto_merge=false`, `llm_review_enabled=false`, незавершённых jobs нет, расписание инициализировано, два отчёта куратора сохранён. `format:check` прошёл.
-- Живой проход по расписанию через 168 часов отдельно не выжидался; планировщик проверен автоматическими тестами. Повторить контролируемую проверку модели: `npm run test:optimizer:live -- --require-merge`. Подробности — `docs/INSTALLATION_CHECK.md`.
+## Automatic curator 0.3.0 verification
+
+- Passed **144 Node tests**, typecheck/build, Bun native SQLite, headless OpenTUI, and exports from the extracted npm package.
+- Verified semantic consolidation and instruction reduction, supporting resources and links, manual/readonly/locked/pinned protection, revision/hash conflicts, idempotency, budgets, failures, and restart recovery. Optimizer dry runs leave all tables and the durable cursor unchanged. Bounded passes continue traversal; oversized packages are reported in `skipped`.
+- Verified optimize/rollback authorization, separate tenant/workspace isolation, curator/system pauses, disabling, obsolete revisions, and rejection of rollback without an optimization snapshot. Rollback creates a separate proposal requiring approval.
+- Headless OpenTUI covers execution/model/location selection, preview, reports, schedule, pause/resume, rollback preparation, cancellation, and errors. Automatic review offers Disabled / Check for stale skills / Semantic optimization; separate `allow_auto_merge` permission preserves publication mode.
+- Release `0.3.0-bc62fd43cf31` was installed for server/CLI and reloaded. Real direct job `17b240f3-2790-460e-b9e2-cd53d9571622` used DeepSeek `deepseek-flash`, completed, and produced an approved merge of two temporary duplicate skills. Compact root instructions, byte-preserved resources, and superseded sources were confirmed; approved rollback restored both complete packages. All three temporary skills were archived and the audit retained.
+- Native `/skills-optimize` opened its dialog with run, preview, status, automatic review, schedule, and merging controls. Live native `skill.list`, archive/restore, and authorization checks passed. Final health was healthy 0.3.0 with `bun:sqlite`, manual approval, `allow_auto_merge=false`, `llm_review_enabled=false`, and no unfinished jobs. The schedule was initialized and two curator reports retained; formatting passed.
+- The default 168-hour scheduled pass was not awaited in the live service; the scheduler was verified by automated tests. Repeat the controlled live model check with `npm run test:optimizer:live -- --require-merge`; see [installation checks](docs/INSTALLATION_CHECK.md).
+
+## English release 0.3.2 verification
+
+- All tracked interface, documentation, specification, task-history, and live-fixture text is in English. The Cyrillic scan and old-specification-reference check passed.
+- All 147 Node tests, typecheck/build, Bun native SQLite, and headless OpenTUI checks passed. English UI assertions cover the same selection, publication, refinement, and optimizer workflows.
+- Formatting, local Markdown links, GitHub issue-template parsing, and npm package export checks passed. The archive includes the English specification, changelog, and contributor guide; runtime data and credentials remain excluded.
+- Recorded live-installation checks in docs/INSTALLATION_CHECK.md remain explicitly tied to the previously installed releases; this verification concerns the 0.3.2 repository and package.

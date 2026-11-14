@@ -1,11 +1,11 @@
-# Архитектура и модель данных
+# Architecture and data model
 
 ```mermaid
 flowchart TB
   TUI[OpenCode TUI /skills-manager] --> RPC[skill-curator.v1]
   Clients[VALERIA / TS / HTTP bridge] --> RPC
   RPC --> Auth[Capability → Principal → tenant/workspace → Role]
-  Auth --> Core[CuratorCore: единые правила]
+  Auth --> Core[CuratorCore: shared rules]
   Core --> Catalog[Catalog / immutable proposals / validation]
   Core --> Learning[History / Learner / deterministic Curator]
   Core --> Jobs[JobService / mode router / budgets]
@@ -19,31 +19,33 @@ flowchart TB
   Journal --> Packages[Full skill packages]
 ```
 
-## Модули
+## Modules
 
-| Файл                        | Ответственность                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------- |
-| `server.ts`                 | Реальная регистрация Plugin.define, RPC, skill transform/reload, capture и scheduler        |
-| `core.ts`                   | Авторизованный dispatch 80 методов, идемпотентность, материализация LLM-контекста           |
-| `catalog.ts`                | Каталог, revisions, версии, proposals, merge/split, публикация и recovery                   |
-| `packages.ts`               | Allowlist путей, links, YAML, binary encoding, staged filesystem replacement                |
-| `store.ts` / `database.ts`  | SQLite, миграция v1, Node/Bun drivers, IMMEDIATE transactions, process lock, durable events |
-| `jobs.ts`                   | Зафиксированный executor, конкурентность, бюджет, timeout, lease и reconciliation           |
-| `learning.ts`               | Provenance, очистка, dedupe, evidence validation, deterministic findings                    |
-| `refine.ts`                 | Неизменяемые снимки переписки, контекст каталога, кандидаты создания/обновления             |
-| `conversation-review.ts`    | Долговременный счётчик действий, завершение ответа, дедупликация и задержки автозапуска     |
-| `opencode-conversations.ts` | Чтение истории SDK с проверками проекта, состояния idle и гонок при захвате                 |
-| `settings.ts`               | Строгая схема настроек, deep patch, optimistic locking                                      |
-| `rpc.ts`                    | Публичные Standard Schema/Zod-контракты и типы клиента                                      |
-| `tui.tsx`                   | Solid/OpenTUI route и диалоги поверх RPC                                                    |
+| File                        | Responsibility                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------ |
+| `server.ts`                 | SDK `Plugin.define` registration, RPC, skill transformation/reload, capture, and scheduling      |
+| `core.ts`                   | Authorized dispatch for 80 methods, idempotency, and LLM context materialization                 |
+| `catalog.ts`                | Catalog, revisions, versions, proposals, merge/split, publication, and recovery                  |
+| `packages.ts`               | Path allowlists, links, YAML, binary encoding, and staged filesystem replacement                 |
+| `store.ts` / `database.ts`  | SQLite, v1 migration, Node/Bun drivers, IMMEDIATE transactions, process lock, and durable events |
+| `jobs.ts`                   | Fixed executor selection, concurrency, budgets, timeouts, leases, and reconciliation             |
+| `learning.ts`               | Provenance, redaction, deduplication, evidence validation, and deterministic findings            |
+| `refine.ts`                 | Immutable conversation snapshots, catalog context, and create/update candidates                  |
+| `conversation-review.ts`    | Durable action counts, response completion, deduplication, and automatic review delays           |
+| `opencode-conversations.ts` | SDK history access with project, idle state, and capture race checks                             |
+| `optimizer.ts`              | Bounded semantic plans, proposal validation, reports, and rollback snapshots                     |
+| `curator-scheduler.ts`      | Durable curator scheduling, activity/idle checks, and retry state                                |
+| `settings.ts`               | Strict settings schema, deep patches, and optimistic locking                                     |
+| `rpc.ts`                    | Public Standard Schema/Zod contracts and client types                                            |
+| `tui.tsx`                   | Solid/OpenTUI route and dialogs backed by RPC                                                    |
 
-## Хранение
+## Storage
 
-`<data_directory>/curator.sqlite` открывается с WAL, synchronous=FULL, busy_timeout=5000. По умолчанию каталог данных — `<project>/.curator`. Каталог навыков можно задать отдельно. БД содержит таблицы `skills`, `skill_versions`, `sessions`, `learning_candidates`, `proposals`, `jobs`, `job_attempts`, `job_leases`, `events`, `audit_log`, `settings`, `usage`, `idempotency`, `publications`, `control`. Строки — JSON с ограничением json_valid и стабильным primary key. Версия схемы хранится в `schema_migrations`; первая миграция транзакционная и повторяемая.
+`<data_directory>/curator.sqlite` uses WAL, `synchronous=FULL`, and `busy_timeout=5000`. The default data directory is `<project>/.curator`. The skill directory can be configured separately. The database contains `skills`, `skill_versions`, `sessions`, `learning_candidates`, `proposals`, `jobs`, `job_attempts`, `job_leases`, `events`, `audit_log`, `settings`, `usage`, `idempotency`, `publications`, and `control`. Rows contain JSON with a `json_valid` constraint and a stable primary key. `schema_migrations` records the schema version; the first migration is transactional and repeatable.
 
-Пакеты располагаются под хешем **только** tenant/workspace и стабильным skill_id. Название навыка не является путём. Текст хранится в UTF-8, произвольные бинарные данные — строками `base64:<данные>`. Такой же формат применён в RPC export/import. Хеш вычисляется по канонически отсортированным ключам полного пакета. Просмотр файла не исполняет его.
+Package paths depend **only** on the tenant/workspace hash and stable `skill_id`. A skill name is not a filesystem path. Text uses UTF-8; arbitrary binary content uses `base64:<data>` strings. RPC export/import uses the same representation. Package hashes cover the complete package with canonically sorted keys. Viewing a file does not execute it.
 
-Схема связей:
+Relationships:
 
 ```mermaid
 erDiagram
@@ -58,34 +60,34 @@ erDiagram
   skill_versions ||--o{ audit_log : traces
 ```
 
-## Публикация и восстановление
+## Publication and recovery
 
-1. Проверить policy, текущую revision, content integrity и фактический hash пакета на диске.
-2. Сохранить durable journal: прежние и новые полные снимки, committed=false.
-3. Создать staging-пакет, fsync файлов; заменить каталог через rename с backup. Обработать каждый пакет составной операции.
-4. Одной SQLite-транзакцией сохранить новые skills, версии, статус proposal и события; отметить journal committed=true.
-5. Удалить journal и обновить registry OpenCode. При ошибке reload каталог остаётся валидным, health показывает pending; повторный reload устраняет временную невидимость.
+1. Check policy, current revision, content integrity, and the actual package hash on disk.
+2. Save a durable journal containing complete old and new snapshots with `committed=false`.
+3. Stage the package, fsync its files, and replace the directory through rename with a backup. Process every package in a compound operation.
+4. Save new skills, versions, proposal status, and events in one SQLite transaction; set `committed=true` in the journal.
+5. Remove the journal and reload the OpenCode registry. If reload fails, the catalog remains valid and health reports a pending reload; retrying reload restores visibility.
 
-До открытия API recovery применяет старые снимки незавершённого journal либо новые снимки committed journal. При ошибке доступа/целостности запуск блокируется. Тесты прерывают настоящий дочерний процесс до и после фиксации БД. Физическое отключение питания и особенности сетевых FS отдельно не моделировались; хранение рекомендуется на локальном диске.
+Recovery runs before the API opens. It restores old snapshots for an uncommitted journal or new snapshots for a committed journal. Access or integrity failures block startup. Tests terminate a real child process before and after the database commit. Physical power loss and network filesystem behavior were not separately modeled; local disk storage is recommended.
 
-Второй writer в ту же БД запрещён process lock. После аварии lock снимается только при подтверждённом отсутствии прежнего PID. Мутации внутри процесса сериализованы; SQLite IMMEDIATE атомарно фиксирует leases и revisions.
+A process lock prevents a second writer from opening the same database. After a crash, the lock is removed only when the previous PID is confirmed absent. In-process mutations are serialized; SQLite IMMEDIATE transactions commit leases and revisions atomically.
 
 ## Jobs
 
-Режим выбирается до постановки в очередь. `auto` выбирает первый доступный из предпочтений; активный job не мигрирует при изменении настроек. Локальные jobs исполняются scheduler, внешние — через atomic pull lease. В БД сохраняется SHA-256 случайного lease token. После истечения lease: `unknown_outcome`, запрет повторной выдачи/retry и консервативное сохранение бюджетного резерва. Прежний worker может прислать подтверждённый исход с прежней capability; повторный complete того же payload идемпотентен.
+The execution mode is selected before a job enters the queue. `auto` selects the first available preferred executor; an accepted job does not migrate when settings change. The scheduler runs local jobs; external jobs use atomic pull leases. The database stores the SHA-256 hash of a random lease token. Lease expiry produces `unknown_outcome`, blocks reassignment/retry, and conservatively retains the budget reservation. The previous worker can report a confirmed outcome with its original capability; repeating `complete` with the same payload is idempotent.
 
-Лимит расходов проверяется по tenant за UTC-день, конкурентность — глобально, по executor и workspace. Незавершённые исходы удерживают слоты и резервы. Отмена принятого задания требует acknowledgement, потому что разрыв соединения сам по себе не доказывает остановку внешней модели.
+Spending limits apply per tenant per UTC day; concurrency limits apply globally, per executor, and per workspace. Unresolved outcomes retain slots and reservations. Canceling an accepted job requires acknowledgment because a disconnected connection does not prove that the external model stopped.
 
-## История
+## History
 
-В режиме conversation review hook считает все завершённые вызовы инструментов отдельно для каждой переписки. Listener сохраняет границу успешного ответа; started/failed/interrupted сбрасывают её. Scheduler проверяет порог действий, задержки, quiet hours, pause и native idle перед постановкой задания. Счётчик и ограниченное окно дедупликации последних 512 событий находятся в `control`; retry с неизвестным исходом сохраняет ключ, подтверждённый отказ до принятия позволяет новую попытку с задержкой. История до установки автоматически не обходится.
+In conversation review mode, a hook counts all completed tool calls separately for each conversation. A listener records a successfully completed response; started, failed, or interrupted responses clear that boundary. Before enqueueing a job, the scheduler checks the action threshold, delays, quiet hours, pause state, and native idle status. `control` stores the counter and a bounded deduplication window of the last 512 events. Retries with an unknown outcome retain their key; a confirmed rejection before acceptance allows a new attempt after a delay. History from before installation is not scanned automatically.
 
-`learning.refine` читает текущий SDK-контекст, очищает и ограничивает его размер, фиксирует immutable snapshot ID, revisions и hashes доступных целей. Сам текст остаётся в `sessions` с `verified:false`; job хранит идентификаторы. Модель получает снимок и каталог, возвращает кандидаты с именем нового навыка либо `target_skill_id` существующего. При обновлении добавляется раздел Refinement с процедурой, условиями, ошибками и цитатами; остальные файлы пакета сохраняются. Принятие результата проверяет цитаты и разрешённые цели повторно. `truncated` и `catalog_omitted` обозначают неполный контекст. Конфликт каталога останавливает обработку.
+`learning.refine` reads the available SDK context, redacts it, limits its size, and records an immutable snapshot ID plus revisions and hashes of eligible targets. The text remains in `sessions` with `verified:false`; the job stores identifiers. The model receives the snapshot and catalog and returns candidates with either a new skill name or an existing `target_skill_id`. Updates append a Refinement section containing the procedure, conditions, failures, and quotes; other package files are preserved. Result acceptance checks quotes and allowed targets again. `truncated` and `catalog_omitted` identify incomplete context. A catalog conflict stops processing.
 
-Отдельный `learning.run` сохраняет прежние требования: только verified-источники и буквальное evidence. При выключенном conversation review доступен прежний сбор test-tool фрагментов и backlog истории. Внутренние session IDs регистрируются до create/prompt. Ни один LLM-ответ не может одобрить собственное предложение; автоматическое одобрение выполняет только настроенная серверная policy.
+The separate `learning.run` path retains its original requirements: verified sources and literal evidence only. When conversation review is disabled, the original test-tool fragment capture and history backlog remain available. Internal session IDs are registered before create/prompt. No LLM response can approve its own proposal; only configured server policy can grant automatic approval.
 
-Официальные источники совместимости: [server API](https://opencode.ai/docs/build/plugins/server/), [TUI API](https://opencode.ai/docs/build/plugins/cli/), [RPC API](https://opencode.ai/docs/build/plugins/rpc/), [package parts](https://opencode.ai/docs/build/plugins/). Проверены 14 ноября 2026; пакет закреплён на 2.3.0.
+Official compatibility references: [server API](https://opencode.ai/docs/build/plugins/server/), [TUI API](https://opencode.ai/docs/build/plugins/cli/), [RPC API](https://opencode.ai/docs/build/plugins/rpc/), and [package parts](https://opencode.ai/docs/build/plugins/). Checked on November 14, 2026; the package pins SDK 2.3.0.
 
-## Семантический куратор
+## Semantic curator
 
-`optimizer.ts` готовит ограниченные группы полных пакетов, проверяет план модели, сохраняет proposals, отчёты и обратные снимки. `curator-scheduler.ts` хранит расписание и активность в control; проверяет native idle, паузы, незавершённые jobs и повторные попытки. Core авторизует optimize/status/rollback и транзакционно принимает группы; JobService обслуживает operation=optimize на прежних executors. Для auto-merge требуется отдельный allow_auto_merge. Детали — [CURATOR.md](CURATOR.md).
+`optimizer.ts` prepares bounded groups of complete packages, validates the model's plan, and stores proposals, reports, and rollback snapshots. `curator-scheduler.ts` persists the schedule and activity in `control`; it checks native idle status, pauses, unfinished jobs, and retries. Core authorizes optimize/status/rollback and accepts batches transactionally; JobService runs `operation=optimize` through the existing executors. Automatic merging requires the separate `allow_auto_merge` flag. See [CURATOR.md](CURATOR.md).

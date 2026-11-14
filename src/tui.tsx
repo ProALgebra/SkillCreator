@@ -72,12 +72,12 @@ export default Plugin.define({
     const confirm = (title: string) =>
       context.ui.dialog.confirm({
         title,
-        message: 'Применить выбранное действие? История версий сохранится.',
+        message: 'Apply this action? Revision history will be preserved.',
       });
     const open = () => context.ui.router.navigate({ type: 'plugin', name: 'skills-manager' });
     const chooseMode = async () =>
       context.ui.dialog.select({
-        title: 'Исполнитель',
+        title: 'Executor',
         options: ['auto', 'direct', 'session', 'valeria', 'external'].map((value) => ({
           title: value,
           value,
@@ -105,10 +105,10 @@ export default Plugin.define({
       let sessionID: string | undefined;
       if (route.type === 'session') {
         const source = await context.ui.dialog.select({
-          title: 'Разобрать переписку',
+          title: 'Review conversation',
           options: [
-            { title: 'Текущая переписка', value: 'current' },
-            { title: 'Выбрать из истории', value: 'history' },
+            { title: 'Current conversation', value: 'current' },
+            { title: 'Choose from history', value: 'history' },
           ],
         });
         if (!source) return;
@@ -119,11 +119,11 @@ export default Plugin.define({
           items: Array<{ session_id: string; title: string }>;
         };
         if (sessions.items.length === 0) {
-          await alert('Разобрать переписку', 'В этом проекте нет доступных переписок.');
+          await alert('Review conversation', 'No conversations are available in this project.');
           return;
         }
         sessionID = await context.ui.dialog.select({
-          title: 'Переписка для разбора',
+          title: 'Conversation to review',
           options: sessions.items.map((session) => ({
             title: session.title || session.session_id,
             value: session.session_id,
@@ -132,9 +132,9 @@ export default Plugin.define({
         if (!sessionID) return;
       }
       const focus = await context.ui.dialog.prompt({
-        title: 'Что извлечь из переписки?',
+        title: 'What should this review extract?',
         description:
-          'Можно оставить пустым. Сообщения проверяются как источники, а не как инструкции. По умолчанию изменения навыков требуют одобрения.',
+          'Optional. Messages are treated as evidence rather than instructions. Skill changes require approval by default.',
         value: '',
       });
       if (focus === undefined) return;
@@ -146,7 +146,7 @@ export default Plugin.define({
         execution: execution(mode),
       });
       context.ui.toast.show({
-        message: 'Разбор переписки запущен. Результаты появятся в предложениях навыков.',
+        message: 'Conversation review started. Results will appear in skill proposals.',
         variant: 'success',
       });
     };
@@ -167,19 +167,17 @@ export default Plugin.define({
           approval.allow_auto_archive_managed);
       const mode = await context.ui.dialog.select({
         title:
-          'Публикация навыков · ' +
-          (automatic ? 'автоматическая' : selective ? 'выборочная' : 'ручная'),
+          'Skill publication · ' + (automatic ? 'automatic' : selective ? 'selective' : 'manual'),
         options: [
           {
-            title: 'Вручную',
+            title: 'Manual',
             value: 'manual',
-            description: 'Одобрять предложения перед публикацией навыков.',
+            description: 'Approve proposals before publishing skills.',
           },
           {
-            title: 'Автоматически',
+            title: 'Automatic',
             value: 'auto',
-            description:
-              'Новые результаты: создание навыков и безопасные обновления управляемых навыков без одобрения.',
+            description: 'Publish new skills and safe updates to managed skills without approval.',
           },
         ],
       });
@@ -197,32 +195,32 @@ export default Plugin.define({
       });
       context.ui.toast.show({
         message: enabled
-          ? 'Автоматическая публикация следующих результатов включена: новые навыки и безопасные обновления.'
-          : 'Включена ручная публикация: предложения требуют одобрения.',
+          ? 'Automatic publication enabled for future results: new skills and safe updates.'
+          : 'Manual publication enabled: proposals require approval.',
         variant: 'success',
       });
     };
     const optimize = async () => {
       const action = await context.ui.dialog.select({
-        title: 'Оптимизация библиотеки навыков',
+        title: 'Optimize skill library',
         options: [
           {
-            title: 'Запустить сейчас',
+            title: 'Run now',
             value: 'run',
-            description: 'Найти улучшения и смысловые пересечения навыков.',
+            description: 'Find improvements and semantic overlap between skills.',
           },
           {
-            title: 'Предварительный просмотр',
+            title: 'Preview',
             value: 'preview',
-            description: 'Показать состав проверки без запуска модели.',
+            description: 'Preview review batches without calling a model.',
           },
-          { title: 'Состояние и отчёты', value: 'status' },
-          { title: 'Автоматическая проверка', value: 'automation' },
-          { title: 'Расписание и параметры', value: 'schedule' },
-          { title: 'Автоматическое объединение', value: 'auto_merge' },
-          { title: 'Приостановить куратора', value: 'pause' },
-          { title: 'Продолжить работу куратора', value: 'resume' },
-          { title: 'Подготовить откат изменения', value: 'rollback' },
+          { title: 'Status and reports', value: 'status' },
+          { title: 'Automatic review', value: 'automation' },
+          { title: 'Schedule and parameters', value: 'schedule' },
+          { title: 'Automatic merging', value: 'auto_merge' },
+          { title: 'Pause curator', value: 'pause' },
+          { title: 'Resume curator', value: 'resume' },
+          { title: 'Prepare rollback', value: 'rollback' },
         ],
       });
       if (!action) return;
@@ -230,16 +228,16 @@ export default Plugin.define({
         const mode = await chooseMode();
         if (!mode) return;
         await alert(
-          'Запуск оптимизации',
+          'Optimization started',
           await mutate('curator.optimize', { execution: execution(mode) }),
         );
       } else if (action === 'preview') {
         await alert(
-          'План оптимизации без запуска модели',
+          'Optimization preview without model execution',
           await call('curator.optimize', { dry_run: true }),
         );
       } else if (action === 'status') {
-        await alert('Куратор — состояние и отчёты', await call('curator.status'));
+        await alert('Curator status and reports', await call('curator.status'));
       } else if (action === 'automation') {
         const current = (await call('settings.get')) as { revision: number; settings: Settings };
         const curator = current.settings.curator;
@@ -250,28 +248,28 @@ export default Plugin.define({
             : 'lifecycle';
         const selected = await context.ui.dialog.select({
           title:
-            'Автоматическая проверка · ' +
+            'Automatic review · ' +
             (mode === 'disabled'
-              ? 'выключена'
+              ? 'disabled'
               : mode === 'optimize'
-                ? 'смысловая оптимизация'
-                : 'устаревание навыков'),
+                ? 'semantic optimization'
+                : 'skill lifecycle review'),
           options: [
             {
-              title: 'Выключена',
+              title: 'Disabled',
               value: 'disabled',
-              description: 'Ручной запуск остаётся доступным.',
+              description: 'Manual runs remain available.',
             },
             {
-              title: 'Проверять устаревание',
+              title: 'Check for stale skills',
               value: 'lifecycle',
-              description: 'Проверка возраста и использования навыков без вызова модели.',
+              description: 'Review skill age and usage without calling a model.',
             },
             {
-              title: 'Смысловая оптимизация',
+              title: 'Semantic optimization',
               value: 'optimize',
               description:
-                'Проверка моделью по расписанию во время простоя. Публикация — согласно настроенной политике.',
+                'Run scheduled model reviews while idle. Publish changes according to the approval policy.',
             },
           ],
         });
@@ -288,24 +286,24 @@ export default Plugin.define({
         context.ui.toast.show({
           message:
             selected === 'disabled'
-              ? 'Автоматическая проверка отключена.'
+              ? 'Automatic review disabled.'
               : selected === 'optimize'
-                ? 'Смысловая оптимизация по расписанию включена.'
-                : 'Автоматическая проверка устаревания включена.',
+                ? 'Scheduled semantic optimization enabled.'
+                : 'Automatic skill lifecycle review enabled.',
           variant: 'success',
         });
       } else if (action === 'schedule') {
         const current = (await call('settings.get')) as { revision: number; settings: Settings };
         const value = await context.ui.dialog.prompt({
-          title: 'Расписание куратора — JSON',
+          title: 'Curator schedule (JSON)',
           value: JSON.stringify(current.settings.curator, null, 2),
           description:
-            'enabled включает куратора; llm_review_enabled — смысловую проверку моделью. interval_hours задаёт интервал между проверками.',
+            'Set enabled to enable the curator and llm_review_enabled to enable semantic model reviews. interval_hours sets the interval between reviews.',
         });
         if (value === undefined || !value.trim()) return;
         const patch: unknown = JSON.parse(value);
         if (!patch || typeof patch !== 'object' || Array.isArray(patch))
-          throw new Error('Параметры куратора должны быть JSON-объектом.');
+          throw new Error('Curator settings must be a JSON object.');
         if (
           !Object.keys(patch).length ||
           JSON.stringify(patch) === JSON.stringify(current.settings.curator)
@@ -315,21 +313,18 @@ export default Plugin.define({
           expected_revision: current.revision,
           patch: { curator: patch },
         });
-        context.ui.toast.show({ message: 'Расписание куратора сохранено.', variant: 'success' });
+        context.ui.toast.show({ message: 'Curator schedule saved.', variant: 'success' });
       } else if (action === 'auto_merge') {
         const current = (await call('settings.get')) as { revision: number; settings: Settings };
         const approval = current.settings.approval;
         const value = await context.ui.dialog.select({
-          title:
-            'Автоматическое объединение · ' +
-            (approval.allow_auto_merge ? 'разрешено' : 'запрещено'),
+          title: 'Automatic merging · ' + (approval.allow_auto_merge ? 'allowed' : 'disallowed'),
           options: [
-            { title: 'Требовать одобрение', value: 'manual' },
+            { title: 'Require approval', value: 'manual' },
             {
-              title: 'Разрешить автоматическое объединение',
+              title: 'Allow automatic merging',
               value: 'auto',
-              description:
-                'Применяется только при автоматическом режиме публикации. Защищённые навыки сохраняются.',
+              description: 'Requires automatic publication. Protected skills remain unchanged.',
             },
           ],
         });
@@ -341,10 +336,10 @@ export default Plugin.define({
         });
         context.ui.toast.show({
           message: !enabled
-            ? 'Автоматическое объединение отключено.'
+            ? 'Automatic merging disabled.'
             : approval.mode === 'auto'
-              ? 'Автоматическое объединение разрешено.'
-              : 'Разрешение сохранено. Для автоматического применения включите автоматическую публикацию через /skills-publication.',
+              ? 'Automatic merging allowed.'
+              : 'Permission saved. Enable automatic publication with /skills-publication to apply changes automatically.',
           variant: 'success',
         });
       } else if (action === 'pause' || action === 'resume') {
@@ -352,19 +347,19 @@ export default Plugin.define({
           subsystem: 'curator',
         });
         context.ui.toast.show({
-          message: action === 'pause' ? 'Куратор приостановлен.' : 'Пауза куратора снята.',
+          message: action === 'pause' ? 'Curator paused.' : 'Curator resumed.',
           variant: 'success',
         });
       } else if (action === 'rollback') {
         const value = await context.ui.dialog.prompt({
-          title: 'ID применённого предложения из отчёта куратора',
+          title: 'Applied proposal ID from a curator report',
         });
         if (!value?.trim()) return;
         const proposal = (await call('proposals.get', { proposal_id: value.trim() })) as Proposal;
         if (proposal.status !== 'applied')
-          throw new Error('Откат доступен только для применённого предложения.');
+          throw new Error('Only applied proposals can be rolled back.');
         await alert(
-          'Предложение отката — требуется одобрение',
+          'Rollback proposal (approval required)',
           await mutate('curator.rollback', {
             proposal_id: proposal.proposal_id,
             expected_revision: proposal.revision,
@@ -378,7 +373,7 @@ export default Plugin.define({
         settings: Record<string, unknown>;
       };
       const patch = await context.ui.dialog.prompt({
-        title: 'Настройки — JSON patch',
+        title: 'Settings (JSON patch)',
         value: '{}',
         description:
           'conversation_review, execution, limits, approval, privacy, curator, auto_learning',
@@ -391,12 +386,12 @@ export default Plugin.define({
     };
     const editSettings = async () => {
       const action = await context.ui.dialog.select({
-        title: 'Настройки навыков',
+        title: 'Skill settings',
         options: [
           {
-            title: 'Публикация навыков',
+            title: 'Skill publication',
             value: 'publication',
-            description: 'Ручное одобрение или автоматическая публикация.',
+            description: 'Manual approval or automatic publication.',
           },
           { title: 'JSON patch', value: 'json' },
         ],
@@ -407,7 +402,7 @@ export default Plugin.define({
     const jobs = async () => {
       const list = (await call('jobs.list', { limit: 200 })) as { items: Job[] };
       const id = await context.ui.dialog.select({
-        title: 'Задания',
+        title: 'Jobs',
         options: list.items.map((j) => ({
           title: j.operation + ' · ' + j.status,
           value: j.job_id,
@@ -430,14 +425,14 @@ export default Plugin.define({
           value,
         })),
       });
-      if (action === 'details') await alert('Задание', job);
+      if (action === 'details') await alert('Job', job);
       else if (action && (await confirm(action)))
         await mutate(('jobs.' + action) as MethodName, { job_id: id });
     };
     const proposals = async () => {
       const list = (await call('proposals.list', { limit: 200 })) as { items: Proposal[] };
       const id = await context.ui.dialog.select({
-        title: 'Предложения',
+        title: 'Proposals',
         options: list.items.map((p) => ({
           title: p.operation + ' · ' + p.status,
           value: p.proposal_id,
@@ -448,7 +443,7 @@ export default Plugin.define({
       const p = (await call('proposals.get', { proposal_id: id })) as Proposal;
       await alert('Diff · ' + p.risk_level, p.diff || p.rationale);
       const action = await context.ui.dialog.select({
-        title: 'Действие',
+        title: 'Action',
         options: ['validate', 'approve', 'reject', 'apply', 'cancel'].map((value) => ({
           title: value,
           value,
@@ -462,15 +457,15 @@ export default Plugin.define({
     };
     const create = async () => {
       const name = await context.ui.dialog.prompt({
-        title: 'Имя навыка',
+        title: 'Skill name',
         placeholder: 'review-changes',
       });
       if (!name) return;
       const description = await context.ui.dialog.prompt({
-        title: 'Описание и условия применения',
+        title: 'Description and usage conditions',
       });
       if (!description) return;
-      const instructions = await context.ui.dialog.prompt({ title: 'Инструкции навыка' });
+      const instructions = await context.ui.dialog.prompt({ title: 'Skill instructions' });
       if (!instructions) return;
       await mutate('skills.create', {
         files: {
@@ -483,9 +478,9 @@ export default Plugin.define({
       const chosen = new Set<string>();
       for (;;) {
         const value = await context.ui.dialog.select({
-          title: 'Выберите навыки: ' + chosen.size,
+          title: 'Selected skills: ' + chosen.size,
           options: [
-            { title: 'Готово — выбрать действие', value: '__done' },
+            { title: 'Done: choose an action', value: '__done' },
             ...list.items.map((s) => ({
               title: (chosen.has(s.skill_id) ? '[x] ' : '[ ] ') + s.name,
               value: s.skill_id,
@@ -499,7 +494,7 @@ export default Plugin.define({
       }
       if (!chosen.size) return;
       const action = await context.ui.dialog.select({
-        title: 'Пакетная операция',
+        title: 'Batch action',
         options: ['merge', 'archive', 'pin', 'adopt', 'export'].map((value) => ({
           title: value,
           value,
@@ -507,7 +502,7 @@ export default Plugin.define({
       });
       if (!action) return;
       if (action === 'merge') {
-        const name = await context.ui.dialog.prompt({ title: 'Имя объединённого навыка' });
+        const name = await context.ui.dialog.prompt({ title: 'Merged skill name' });
         if (name)
           await alert(
             'Merge proposal',
@@ -515,7 +510,7 @@ export default Plugin.define({
           );
         return;
       }
-      if (!(await confirm(action + ' · ' + chosen.size + ' навыков'))) return;
+      if (!(await confirm(action + ' · ' + chosen.size + ' skills'))) return;
       const exported: unknown[] = [];
       for (const id of chosen) {
         const current = (await call('skills.get', { skill_id: id })) as Skill;
@@ -526,7 +521,7 @@ export default Plugin.define({
             expected_revision: current.revision,
           });
       }
-      if (action === 'export') await alert('Экспорт пакетов', exported);
+      if (action === 'export') await alert('Export packages', exported);
     };
     const skillActions = async (skill: Skill) => {
       const action = await context.ui.dialog.select({
@@ -555,7 +550,7 @@ export default Plugin.define({
       const input: RpcInput = { skill_id: skill.skill_id, expected_revision: skill.revision };
       if (action === 'files') {
         const file = await context.ui.dialog.select({
-          title: 'Файлы пакета',
+          title: 'Package files',
           options: Object.keys(skill.files).map((path) => ({ title: path, value: path })),
         });
         if (file) await alert(file, skill.files[file]);
@@ -563,16 +558,16 @@ export default Plugin.define({
       }
       if (action === 'edit') {
         const value = await context.ui.dialog.prompt({
-          title: 'Полный пакет — JSON {путь: содержимое}',
+          title: 'Full package (JSON: path to contents)',
           value: JSON.stringify(skill.files),
         });
-        if (value && (await confirm('Сохранить пакет')))
+        if (value && (await confirm('Save package')))
           await mutate('skills.update', { ...input, files: JSON.parse(value) });
         return;
       }
       if (['rename', 'clone'].includes(action)) {
         const name = await context.ui.dialog.prompt({
-          title: 'Новое имя',
+          title: 'New name',
           value: skill.name + '-copy',
         });
         if (name) await mutate(('skills.' + action) as MethodName, { ...input, name });
@@ -588,17 +583,21 @@ export default Plugin.define({
         return;
       }
       if (action === 'rollback') {
-        const value = await context.ui.dialog.prompt({ title: 'Номер версии для восстановления' });
-        if (value && (await confirm('Откатить версию')))
+        const value = await context.ui.dialog.prompt({ title: 'Revision to restore' });
+        if (value && (await confirm('Restore revision')))
           await mutate('skills.rollback', { ...input, target_revision: Number(value) });
         return;
       }
       if (action === 'unlock') {
-        const reason = await context.ui.dialog.prompt({ title: 'Причина снятия блокировки' });
+        const reason = await context.ui.dialog.prompt({ title: 'Reason for unlocking' });
         if (reason) await mutate('skills.unlock', { ...input, reason });
         return;
       }
-      if (await confirm(action + (skill.management_policy === 'manual' ? ' — ручной навык' : '')))
+      if (
+        await confirm(
+          action + (skill.management_policy === 'manual' ? ' (manually managed skill)' : ''),
+        )
+      )
         await mutate(('skills.' + action) as MethodName, input);
     };
     function Manager() {
@@ -620,8 +619,8 @@ export default Plugin.define({
           } catch (error) {
             setSyncNotice(
               errorCode(error) === 'forbidden'
-                ? 'Режим чтения: показан сохранённый каталог. Синхронизация требует прав редактора.'
-                : 'Не удалось синхронизировать: ' + errorMessage(error),
+                ? 'Read-only: showing the saved catalog. Synchronization requires editor access.'
+                : 'Synchronization failed: ' + errorMessage(error),
             );
           }
         })().finally(() => {
@@ -699,45 +698,45 @@ export default Plugin.define({
         commands: [
           {
             bind: 'up',
-            title: 'Предыдущий навык',
+            title: 'Previous skill',
             enabled: () => !searchFocused(),
             run: () => move(-1),
           },
           {
             bind: 'down',
-            title: 'Следующий навык',
+            title: 'Next skill',
             enabled: () => !searchFocused(),
             run: () => move(1),
           },
           {
             bind: 'tab',
-            title: 'Поиск / список навыков',
+            title: 'Search / skill list',
             run: () => {
               setSearchFocused((value) => !value);
             },
           },
           {
             bind: 'ctrl+f',
-            title: 'Поиск навыка',
+            title: 'Search skills',
             run: () => {
               setSearchFocused(true);
             },
           },
           {
             bind: 'enter',
-            title: 'Действия навыка',
+            title: 'Skill actions',
             enabled: () => !searchFocused() && !list.loading && !!selected(),
             run: () => action(),
           },
           {
             bind: 'escape',
-            title: 'Назад',
+            title: 'Back',
             run: () =>
               searchFocused() ? focusCatalog() : context.ui.router.navigate({ type: 'home' }),
           },
           {
             bind: 'ctrl+r',
-            title: 'Обновить',
+            title: 'Refresh',
             run: () => refresh(),
           },
         ],
@@ -745,25 +744,25 @@ export default Plugin.define({
       return (
         <box flexDirection="column" padding={1} gap={1} width="100%" height="100%">
           <text height={1} flexShrink={0}>
-            Skill Curator · Каталог / Предложения / Задания / Настройки
+            Skill Curator · Catalog / Proposals / Jobs / Settings
           </text>
           <box flexDirection="column" height={2} flexShrink={0}>
             <box gap={2} flexDirection="row" height={1}>
-              <text onMouseDown={() => void run(create)}>Создать</text>
-              <text onMouseDown={() => void run(batch)}>Пакетные</text>
-              <text onMouseDown={() => void run(review)}>Ревизия</text>
-              <text onMouseDown={() => void run(learn)}>Обучение</text>
-              <text onMouseDown={() => void run(proposals)}>Предложения</text>
+              <text onMouseDown={() => void run(create)}>Create</text>
+              <text onMouseDown={() => void run(batch)}>Batch actions</text>
+              <text onMouseDown={() => void run(review)}>Review</text>
+              <text onMouseDown={() => void run(learn)}>Learn</text>
+              <text onMouseDown={() => void run(proposals)}>Proposals</text>
             </box>
             <box gap={2} flexDirection="row" height={1}>
-              <text onMouseDown={() => void run(jobs)}>Задания</text>
-              <text onMouseDown={() => void run(editSettings)}>Настройки</text>
-              <text onMouseDown={() => void run(optimize)}>Оптимизация</text>
-              <text onMouseDown={() => void refresh()}>Синхронизировать</text>
+              <text onMouseDown={() => void run(jobs)}>Jobs</text>
+              <text onMouseDown={() => void run(editSettings)}>Settings</text>
+              <text onMouseDown={() => void run(optimize)}>Optimize</text>
+              <text onMouseDown={() => void refresh()}>Synchronize</text>
               <text
-                onMouseDown={() => void run(async () => alert('Аудит', await call('audit.list')))}
+                onMouseDown={() => void run(async () => alert('Audit', await call('audit.list')))}
               >
-                Аудит
+                Audit
               </text>
             </box>
           </box>
@@ -783,7 +782,7 @@ export default Plugin.define({
           </box>
           <box height={1} flexShrink={0}>
             <input
-              placeholder="Поиск по имени, описанию и файлам · Ctrl+F / Tab"
+              placeholder="Search names, descriptions, and files · Ctrl+F / Tab"
               focused={searchFocused()}
               onMouseDown={() => setSearchFocused(true)}
               onInput={setQuery}
@@ -792,9 +791,9 @@ export default Plugin.define({
           </box>
           <text height={1} flexShrink={0}>
             {list.loading
-              ? 'Загрузка каталога…'
+              ? 'Loading catalog…'
               : loadError()
-                ? 'Ошибка: ' + loadError()
+                ? 'Error: ' + loadError()
                 : (syncNotice() ?? '')}
           </text>
           <box flexGrow={1} gap={2} flexDirection="row" minHeight={0}>
@@ -808,8 +807,8 @@ export default Plugin.define({
               <Show when={!list.loading && !loadError() && list()?.items.length === 0}>
                 <text>
                   {query()
-                    ? 'По запросу «' + query() + '» навыки не найдены. Измените поиск.'
-                    : 'В разделе ' + state() + ' нет навыков. Ctrl+R — синхронизировать.'}
+                    ? 'No skills match “' + query() + '”. Try another search.'
+                    : 'No skills in ' + state() + '. Press Ctrl+R to synchronize.'}
                 </text>
               </Show>
               <For each={list()?.items ?? []}>
@@ -849,18 +848,18 @@ export default Plugin.define({
                 fallback={
                   <text>
                     {list.loading
-                      ? 'Загрузка…'
+                      ? 'Loading…'
                       : loadError()
-                        ? 'Каталог недоступен. Ctrl+R — повторить.'
+                        ? 'Catalog unavailable. Press Ctrl+R to retry.'
                         : list()?.items.length
-                          ? '↑/↓ или мышь — выбрать навык. Enter — действия.'
-                          : 'Создайте навык или синхронизируйте источники через Ctrl+R.'}
+                          ? 'Use ↑/↓ or the mouse to select a skill. Enter opens actions.'
+                          : 'Create a skill or press Ctrl+R to synchronize sources.'}
                   </text>
                 }
               >
                 {(skill) => (
                   <box flexDirection="column">
-                    <text onMouseDown={() => void action()}>Открыть действия · {skill().name}</text>
+                    <text onMouseDown={() => void action()}>Open actions · {skill().name}</text>
                     <text>
                       {JSON.stringify(
                         {
@@ -881,7 +880,7 @@ export default Plugin.define({
                           <text>━━ {path} ━━</text>
                           <text>
                             {content.startsWith('base64:')
-                              ? 'Двоичный файл — доступен в экспорте'
+                              ? 'Binary file: available in the export'
                               : content}
                           </text>
                         </box>
@@ -893,8 +892,8 @@ export default Plugin.define({
             </scrollbox>
           </box>
           <text height={1} flexShrink={0}>
-            Показано {list()?.items.length ?? 0} из {list()?.total ?? 0} · ↑/↓ — выбор · Enter —
-            действия · Tab — поиск · Ctrl+R — синхронизация · Escape — закрыть
+            Showing {list()?.items.length ?? 0} of {list()?.total ?? 0} · ↑/↓: select · Enter:
+            actions · Tab: search · Ctrl+R: synchronize · Escape: close
           </text>
         </box>
       );

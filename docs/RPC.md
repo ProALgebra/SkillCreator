@@ -1,8 +1,8 @@
-# RPC skill-curator.v1
+# RPC: skill-curator.v1
 
-Контракт экспортируется из `opencode-skill-curator/rpc` как `SkillCurator`. Сервер регистрирует его реальным `ctx.rpc.register`. Клиент: `OpenCode.make(...).rpc(SkillCurator)['skills.list'](input)`. Публичный `CuratorClient` дополнительно валидирует responses по `outputSchemas`; типы каталога, предложений и jobs экспортированы из `rpc`.
+The contract is exported from `opencode-skill-curator/rpc` as `SkillCurator`. The server registers it through the SDK's `ctx.rpc.register`. Client usage: `OpenCode.make(...).rpc(SkillCurator)['skills.list'](input)`. The public `CuratorClient` also validates responses against `outputSchemas`; catalog, proposal, and job types are exported from `rpc`.
 
-## Конверт
+## Request envelope
 
 ```json
 {
@@ -15,17 +15,17 @@
 }
 ```
 
-`tenant_id` можно опустить: сервер берёт его из Principal. Другая строка tenant или неразрешённый workspace отклоняются даже для администратора. `directory` в scope не даёт дополнительных прав и не выбирает произвольный путь на диске. Location OpenCode задаётся штатными client request options.
+`tenant_id` is optional: the server derives it from the Principal. A different tenant or an unauthorized workspace is rejected even for administrators. `scope.directory` grants no extra permission and cannot select an arbitrary disk path. Select the OpenCode location through standard client request options.
 
-`settings_level=workspace|tenant|global` выбирает слой настроек. Workspace наследует tenant и global patches; ответ включает inherited_revisions. Изменение global-слоя требует server-bound global_admin, а не только tenant administrator. `skill_scope=global` при create/import публикует навык для других workspaces того же tenant; изменение такого навыка выполняется администратором из owning workspace.
+`settings_level=workspace|tenant|global` selects the settings layer. Workspace settings inherit tenant and global patches; responses include `inherited_revisions`. Changing the global layer requires a server-bound `global_admin`, beyond the tenant administrator role. On create/import, `skill_scope=global` publishes the skill to other workspaces within the same tenant; an administrator must make subsequent changes from the owning workspace.
 
-Мутации требуют idempotency key, кроме lease/heartbeat/complete/fail с собственным lease capability. Повтор одного payload возвращает сохранённый ответ; другой payload с тем же ключом — `idempotency_conflict`. При аварии между принятием запроса и записью результата возвращается `unknown_outcome`: нужно сверить каталог/jobs, а не создавать новую операцию.
+Mutations require an idempotency key, except lease/heartbeat/complete/fail, which use their own lease capability. Repeating the same payload returns the saved response; a different payload with the same key produces `idempotency_conflict`. A crash between request acceptance and saving the result produces `unknown_outcome`: reconcile the catalog/jobs instead of creating a new operation.
 
-Ответ содержит `request_id`, `correlation_id`, `created_at`, `status` и поля сущности (`skill_id`, `proposal_id` или `job_id`). При изменении revision увеличивается. Коллекции: `{items, total, cursor}`; передавайте `limit` (1–200, default 50), следующий `cursor`, `filters`. Для текущей локальной версии cursor — opaque для клиента строка смещения; не используйте её как стабильный snapshot при параллельных изменениях.
+Responses contain `request_id`, `correlation_id`, `created_at`, `status`, and entity fields (`skill_id`, `proposal_id`, or `job_id`). Changes increment the revision. Collections use `{items, total, cursor}`; pass `limit` (1–200, default 50), the next `cursor`, and `filters`. In the current local version, the cursor is an opaque offset string; do not treat it as a stable snapshot during concurrent changes.
 
-## Методы
+## Methods
 
-| Группа       | Методы                                                                                                                                                                                                   |
+| Group        | Methods                                                                                                                                                                                                  |
 | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | system       | health, status, capabilities, pause, resume, shutdown_work                                                                                                                                               |
 | settings     | get, patch, set_publication_mode, validate, reset                                                                                                                                                        |
@@ -39,46 +39,46 @@
 | stats        | overview, learning, skills, costs                                                                                                                                                                        |
 | audit/events | audit.list, events.replay                                                                                                                                                                                |
 
-Все 80 методов зарегистрированы. Используется единая строгая input schema: неизвестные поля запрещены; обязательность отдельных аргументов дополнительно проверяется обработчиком. Рабочий список и Zod schemas находятся в `src/rpc.ts`.
+All 80 methods are registered. A shared strict input schema rejects unknown fields; handlers also enforce operation-specific required arguments. The current method list and Zod schemas are in `src/rpc.ts`.
 
-## Аргументы операций
+## Operation arguments
 
-| Операция                                            | Поля кроме общего конверта                                                                               |
-| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| create/import                                       | `files: {"SKILL.md": "---...", "assets/a.bin": "base64:..."}`                                            |
-| update                                              | `skill_id`, `expected_revision`, полный новый `files`                                                    |
-| rename/clone                                        | `skill_id`, `name`; rename также `expected_revision`                                                     |
-| archive/restore/pin/unpin/lock/unlock/adopt/unadopt | `skill_id`, `expected_revision`; unlock требует `reason`                                                 |
-| merge.preview                                       | `skill_ids` минимум 2, `name`; создаёт high-risk proposal                                                |
-| split.preview                                       | `skill_id`, `parts` — массив полных пакетов; запрещена потеря зависимостей                               |
-| history/diff/rollback                               | `skill_id`; diff: `from_revision`,`to_revision`; rollback: `target_revision`,`expected_revision`         |
-| proposals.approve/reject/cancel/apply               | `proposal_id`, `expected_revision` предложения                                                           |
-| learning.ingest                                     | `transcript: {source_instance, session_id, stage_id, content, verified, source_refs?, internal?}`        |
-| learning.backfill                                   | `transcripts`, `limit?`, `cursor?`; explicit import, не скрытый обход всего архива                       |
-| learning.run                                        | `session_ids?`, `execution?`; отсутствие ids выбирает непройденные источники                             |
-| learning.sessions                                   | `limit?`; недавние и архивные переписки текущего проекта, без внутренних сессий                          |
-| learning.refine                                     | `session_ids:[один ID]`, `reason?` (фокус), `execution?`; анализ недоверенного снимка переписки          |
-| curator.review/update                               | `skill_ids?` / `skill_id?`, `execution?`                                                                 |
-| curator.lifecycle_run                               | Без LLM; findings и предложения stale/archive, с dedupe по revision                                      |
-| jobs.run                                            | `operation`: learning/review/merge/update, `execution`, `skill_ids?`, `session_ids?`; merge также `name` |
-| jobs.pause/resume/cancel/retry                      | `job_id`; retry разрешён только после определённого failed                                               |
-| settings.patch                                      | `patch`, `expected_revision` настроек                                                                    |
-| settings.set_publication_mode                       | `publication_mode`: auto/manual, `expected_revision`; administrator, `settings_level?`                   |
-| executors.set_policy                                | `patch` для execution, `expected_revision` настроек                                                      |
-| jobs.lease                                          | `worker_id`, `worker_kind`: valeria/external                                                             |
-| jobs.heartbeat                                      | `job_id`, `worker_id`, `lease_token`, `progress` 0–1                                                     |
-| jobs.complete                                       | `job_id`, `worker_id`, `lease_token`, `result`, `cost_usd`                                               |
-| jobs.fail                                           | `job_id`, `worker_id`, `lease_token`, `error`, `cost_usd?`                                               |
+| Operation                                           | Fields in addition to the common envelope                                                                        |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| create/import                                       | `files: {"SKILL.md": "---...", "assets/a.bin": "base64:..."}`                                                    |
+| update                                              | `skill_id`, `expected_revision`, complete replacement `files`                                                    |
+| rename/clone                                        | `skill_id`, `name`; rename also requires `expected_revision`                                                     |
+| archive/restore/pin/unpin/lock/unlock/adopt/unadopt | `skill_id`, `expected_revision`; unlock requires `reason`                                                        |
+| merge.preview                                       | At least 2 `skill_ids`, plus `name`; creates a high-risk proposal                                                |
+| split.preview                                       | `skill_id`, `parts`: an array of complete packages; dependency loss is prohibited                                |
+| history/diff/rollback                               | `skill_id`; diff: `from_revision`, `to_revision`; rollback: `target_revision`, `expected_revision`               |
+| proposals.approve/reject/cancel/apply               | `proposal_id`, the proposal's `expected_revision`                                                                |
+| learning.ingest                                     | `transcript: {source_instance, session_id, stage_id, content, verified, source_refs?, internal?}`                |
+| learning.backfill                                   | `transcripts`, `limit?`, `cursor?`; explicit import rather than an implicit archive-wide scan                    |
+| learning.run                                        | `session_ids?`, `execution?`; omitting IDs selects unprocessed sources                                           |
+| learning.sessions                                   | `limit?`; recent and archived conversations in the current project, excluding internal sessions                  |
+| learning.refine                                     | `session_ids:[one ID]`, `reason?` (focus), `execution?`; analyzes an untrusted conversation snapshot             |
+| curator.review/update                               | `skill_ids?` / `skill_id?`, `execution?`                                                                         |
+| curator.lifecycle_run                               | No LLM; findings and stale/archive proposals deduplicated by revision                                            |
+| jobs.run                                            | `operation`: learning/review/merge/update, `execution`, `skill_ids?`, `session_ids?`; merge also requires `name` |
+| jobs.pause/resume/cancel/retry                      | `job_id`; retry is allowed only after a confirmed failed outcome                                                 |
+| settings.patch                                      | `patch`, the settings' `expected_revision`                                                                       |
+| settings.set_publication_mode                       | `publication_mode`: auto/manual, `expected_revision`; administrator only, `settings_level?`                      |
+| executors.set_policy                                | Execution `patch`, the settings' `expected_revision`                                                             |
+| jobs.lease                                          | `worker_id`, `worker_kind`: valeria/external                                                                     |
+| jobs.heartbeat                                      | `job_id`, `worker_id`, `lease_token`, `progress` from 0 to 1                                                     |
+| jobs.complete                                       | `job_id`, `worker_id`, `lease_token`, `result`, `cost_usd`                                                       |
+| jobs.fail                                           | `job_id`, `worker_id`, `lease_token`, `error`, `cost_usd?`                                                       |
 
-`expected_revision` относится к редактируемой сущности; у proposal и skill независимые счётчики. Новое предложение запоминает revisions всех затрагиваемых навыков. После approval нужен новый expected_revision proposal. Изменившийся исходный пакет блокирует apply даже при сохранённом approved status.
+`expected_revision` belongs to the entity being changed; proposals and skills have independent counters. A new proposal records the revisions of all affected skills. After approval, use the proposal's new expected revision. A changed source package blocks apply even if the proposal remains approved.
 
-Для неизвестного local outcome администратор может явно подтвердить остановку через `jobs.cancel({job_id,confirm_stopped:true,reason,cost_usd,idempotency_key})`. Это аудируемое заявление оператора после проверки фактической остановки и расходов; освобождаются удержанные concurrency/budget reservations. Обычный cancel такого подтверждения не подразумевает.
+For an unknown local outcome, an administrator can explicitly confirm that execution stopped with `jobs.cancel({job_id,confirm_stopped:true,reason,cost_usd,idempotency_key})`. This is an audited operator statement after verifying the actual stop and cost; it releases retained concurrency/budget reservations. Ordinary cancellation does not imply this confirmation.
 
-`skills.list/search`: filters `scope`, `owner`, `state`, `management_policy`, `managed`, `tag`, `used`, `pinned`, `locked`, `name`; sort `name`, `updated_at`, `use_count`. Поиск охватывает текст файлов. Настройки читаются вместе с их revision.
+`skills.list/search` filters: `scope`, `owner`, `state`, `management_policy`, `managed`, `tag`, `used`, `pinned`, `locked`, `name`. Sort fields: `name`, `updated_at`, `use_count`. Search includes file contents. Settings are returned with their revision.
 
-## Переключение публикации
+## Switching publication mode
 
-`settings.set_publication_mode` — отдельная ручка администратора. Сначала прочитайте `settings.get`, затем передайте полученный `revision`:
+`settings.set_publication_mode` is a dedicated administrator endpoint. Read `settings.get` first, then pass its `revision`:
 
 ```ts
 const current = await curator['settings.get']({ auth }, { location });
@@ -93,11 +93,11 @@ await curator['settings.set_publication_mode'](
 );
 ```
 
-`auto` устанавливает `approval.mode=auto`, `allow_auto_create=true`, `allow_auto_patch_managed_low_risk=true`. `manual` устанавливает mode=manual и оба флага false. Остальные настройки сохраняются, включая отдельно разрешённый archive. Ответ содержит revision и effective settings. `dry_run=true` возвращает проверенные настройки без записи; поддерживаются settings_level и наследование. Viewer/editor/curator/worker не могут менять режим. Переключение не применяет накопленные pending-предложения; действует при следующих результатах анализа. Для отключения передайте `publication_mode:'manual'` с новой revision и новым idempotency key.
+`auto` sets `approval.mode=auto`, `allow_auto_create=true`, and `allow_auto_patch_managed_low_risk=true`. `manual` sets `mode=manual` and both flags to false. Other settings, including separate archive and merge permissions, are preserved. The response contains the revision and effective settings. `dry_run=true` validates settings without writing; settings layers and inheritance are supported. Viewers, editors, curators, and workers cannot change the mode. Switching does not apply existing pending proposals; it governs subsequent analysis results. To disable it, pass `publication_mode:'manual'` with a new revision and idempotency key.
 
-## Jobs и вывод модели
+## Jobs and model output
 
-`execution.mode`: direct/session/valeria/external/auto. Также принимаются model/provider/variant, timeout_sec, max_tokens, max_iterations, priority, max_cost_usd, max_parallel, fallback_policy, approval_mode. Эти параметры сохраняются в job; какие из них может реально применить встроенный SDK adapter, описано в ACCEPTANCE.md. Worker получает политику целиком и обязан её соблюдать.
+`execution.mode`: direct/session/valeria/external/auto. Accepted parameters also include model/provider/variant, timeout_sec, max_tokens, max_iterations, priority, max_cost_usd, max_parallel, fallback_policy, and approval_mode. These are persisted in the job; [ACCEPTANCE.md](ACCEPTANCE.md) describes which parameters the built-in SDK adapter can enforce. Workers receive the complete policy and must honor it.
 
 Learner output:
 
@@ -119,18 +119,18 @@ Learner output:
 }
 ```
 
-Для `learning.refine` формат кандидата такой же, но обязателен `name` (kebab-case). Для дополнения существующего навыка добавляется `target_skill_id` из переданного каталога, а `name` должен совпадать с его именем. `source_refs` содержат только точный `snapshot.snapshot_id` из контекста задания. Снимок остаётся unverified; цитата не превращается в независимый результат теста. Исполнитель может вернуть `{"candidates":[]}`. Успешные кандидаты с confidence ≥0.7 и reusability_score ≥0.6 создают предложения; остальные сохраняются только как кандидаты.
+`learning.refine` uses the same candidate format but requires a kebab-case `name`. To refine an existing skill, include a `target_skill_id` from the supplied catalog and a matching `name`. `source_refs` must contain only the exact `snapshot.snapshot_id` from the job context. The snapshot remains unverified; a quote does not become an independent test result. Executors may return `{"candidates":[]}`. Successful candidates with confidence ≥0.7 and reusability_score ≥0.6 produce proposals; others are stored as candidates only.
 
-`learning.sessions` возвращает `{items:[{session_id,title}],total,cursor:null}`. Это ограниченная выборка последних `limit` доступных записей, без постраничного обхода всего архива. `learning.refine` наследует модель переписки, если `execution.provider/model` не указаны. История недоступна вне OpenCode, пока хост не передаст адаптер `CoreOptions.conversations`. Для внешнего executor требуется явный privacy opt-in. `dry_run` проверяет доступность, выбор исполнителя и размер контекста без сохранения снимка или создания job.
+`learning.sessions` returns `{items:[{session_id,title}],total,cursor:null}`. It is a bounded selection of the latest `limit` available entries, not paginated access to the complete archive. `learning.refine` inherits the conversation's model when `execution.provider/model` are omitted. History is unavailable outside OpenCode unless the host supplies `CoreOptions.conversations`. External executors require an explicit privacy opt-in. `dry_run` checks availability, executor selection, and context size without saving a snapshot or creating a job.
 
-Review/update output: `{"updates":[{"skill_id":"...","files":{"SKILL.md":"..."},"rationale":"..."}]}`. Merge assessment: `{"merge":false,"rationale":"Unsafe overlapping dependencies"}` либо merge=true. Лишние поля, выдуманные source_refs, изменившиеся revisions и секреты блокируют принятие результата. Подтверждённый отказ от merge завершает job без proposal.
+Review/update output: `{"updates":[{"skill_id":"...","files":{"SKILL.md":"..."},"rationale":"..."}]}`. Merge assessment: `{"merge":false,"rationale":"Unsafe overlapping dependencies"}` or `merge=true`. Extra fields, fabricated source references, changed revisions, and secrets prevent result acceptance. A confirmed decision against merging completes the job without a proposal.
 
-`dry_run=true` для создания/обновления/merge/split/apply проверяет пакет и возвращает потенциальный результат без записи файлов или принятия job. Для ревизии возвращаются детерминированные findings и выбранный executor. При dry-run решения о proposal возвращается текущее предложение; решение не меняется.
+For create/update/merge/split/apply, `dry_run=true` validates the package and returns a potential result without writing files or accepting a job. Review dry-run returns deterministic findings and the selected executor. Dry-run of a proposal decision returns the current proposal without changing the decision.
 
-## События и ошибки
+## Events and errors
 
-События имеют `event_id`, `occurred_at`, tenant/workspace, actor, correlation_id, entity_id, entity_revision?, details. Обязательные skill/proposal/job/settings/manager/health события сохраняются в `events` и `audit_log`. Текущая безопасная внешняя доставка — `events.replay`; клиент дедуплицирует по event_id и продолжает пагинацию. `manager.open` не является удалённой операцией: открытие route принадлежит локальному TUI.
+Events contain `event_id`, `occurred_at`, tenant/workspace, actor, correlation_id, entity_id, entity_revision?, and details. Required skill/proposal/job/settings/manager/health events are persisted in `events` and `audit_log`. The safe external delivery mechanism is currently `events.replay`; clients deduplicate by `event_id` and continue pagination. `manager.open` is not a remote operation: the local TUI opens the route.
 
-Коды ошибок: unauthorized, forbidden, not_found, validation_error, revision_conflict, scope_violation, locked_skill, readonly_skill, executor_unavailable, rate_limited, budget_exceeded, idempotency_conflict, lease_expired, unknown_outcome, internal_error. SDK использует свой declared error envelope; HTTP bridge переводит его в `{"error":{"code":"...","message":"..."}}`.
+Error codes: unauthorized, forbidden, not_found, validation_error, revision_conflict, scope_violation, locked_skill, readonly_skill, executor_unavailable, rate_limited, budget_exceeded, idempotency_conflict, lease_expired, unknown_outcome, internal_error. The SDK uses its declared error envelope; the HTTP bridge maps it to `{"error":{"code":"...","message":"..."}}`.
 
-Оптимизация библиотеки (`curator.optimize/status/rollback`), схема плана, пагинация и policy описаны в [CURATOR.md](CURATOR.md).
+Library optimization (`curator.optimize/status/rollback`), plan format, continuation, and policy are documented in [CURATOR.md](CURATOR.md).

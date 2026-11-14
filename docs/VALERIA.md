@@ -1,48 +1,48 @@
-# VALERIA и другие внешние клиенты
+# VALERIA and other external clients
 
-Интеграция не требует VALERIA для запуска плагина. Поставлены TS-клиент, HTTP bridge и Python SDK. Сам репозиторий VALERIA не изменялся; bridge адаптируется к её реальному API очереди в месте интеграции.
+The plugin runs independently of VALERIA. A TypeScript client, HTTP bridge, and Python SDK are provided. VALERIA's repository has not been changed; adapt the bridge to its actual queue API at the integration boundary.
 
-## Подключение
+## Connecting
 
-1. В сервере OpenCode настройте `credentials` из `examples/opencode.valeria.jsonc`; токены задайте через окружение сервера и соответствующего клиента. Каждый токен привязан к Principal с tenant/workspace и ролями.
-2. От имени администратора примените `examples/settings.valeria.json` через `settings.patch` с текущей revision и idempotency key. Это **настройки плагина через RPC**, их нельзя вставлять как несуществующие корневые поля конфигурации OpenCode.
-3. VALERIA UI получает `manager.snapshot`, каталоги/версии/proposals/jobs/settings и вызывает те же RPC-методы, что TUI.
-4. Worker использует отдельный token с ролью worker и worker_kind=valeria. Вызов VALERIA с execution.mode=direct/session остаётся локальным в OpenCode.
+1. Configure `credentials` on the OpenCode server using `examples/opencode.valeria.jsonc`; supply tokens through the environment of the server and corresponding client. Each token binds to a Principal with tenant/workspace and roles.
+2. As an administrator, apply `examples/settings.valeria.json` through `settings.patch` with the current revision and an idempotency key. These are **plugin settings applied through RPC**; do not insert them as nonexistent top-level OpenCode configuration fields.
+3. The VALERIA UI reads `manager.snapshot`, catalogs/versions/proposals/jobs/settings, and calls the same RPC methods as the TUI.
+4. A worker uses a separate token with the worker role and `worker_kind=valeria`. A request from VALERIA with `execution.mode=direct/session` still executes locally in OpenCode.
 
 ## HTTP/Python
 
-Запустите из собранного проекта:
+Run from the built project:
 
 ```bash
 OPENCODE_URL=http://127.0.0.1:4096 node examples/http-bridge.mjs
 CURATOR_WORKSPACE=my-project python3 examples/valeria_client.py
 ```
 
-Bridge слушает **127.0.0.1:8787**. Его единственный маршрут — `POST /rpc`, собственный маршрут адаптера. Он передаёт запрос через настоящий `@opencode/client` RPC; не предполагает `/api/curator/...` на сервере OpenCode. Укажите реальный OpenCode URL в окружении. При защищённом сервере его штатную сетевую авторизацию следует добавить в настройки клиента bridge согласно используемому способу deployment.
+The bridge listens on **127.0.0.1:8787**. Its only route is `POST /rpc`, owned by the adapter. It forwards requests through the real `@opencode/client` RPC and does not assume `/api/curator/...` routes exist on the OpenCode server. Set the actual OpenCode URL in the environment. For a protected server, add its standard network authentication to the bridge client configuration according to your deployment method.
 
 ```json
 { "method": "skills.list", "input": { "scope": { "workspace_id": "my-project" }, "limit": 50 } }
 ```
 
-Capability передаётся заголовком `Authorization: Bearer ...`. Bridge перезаписывает input.auth из заголовка, ограничивает размер запроса, не включает CORS и не журналирует тела/токены. Для удалённого доступа разместите за аутентифицированным TLS reverse proxy. Не публикуйте loopback bridge напрямую.
+Pass the capability in `Authorization: Bearer ...`. The bridge overwrites `input.auth` from the header, limits request size, leaves CORS disabled, and does not log bodies/tokens. For remote access, place it behind an authenticated TLS reverse proxy. Do not expose the loopback bridge directly.
 
-## Pull worker и durable marker
+## Pull worker and durable marker
 
 ```text
 jobs.lease(worker_id, worker_kind=valeria)
   → job, context, lease_token, expires_at
-  → найти в VALERIA задачу по marker=job.job_id
+  → look up the VALERIA task using marker=job.job_id
       confirmed absent: submit exactly once with marker
-      present: resume observing same VALERIA task
+      present: resume observing the same VALERIA task
       unknown/network failure: stop, reconcile; never submit another task
   → jobs.heartbeat(job_id, worker_id, lease_token, progress)
   → jobs.complete(..., result=<structured JSON>, cost_usd=<reported cost>)
 ```
 
-Сохраните в durable bridge registry соответствие `job_id → VALERIA task ID` **до** любых повторов после timeout. Секретный lease token храните шифрованным с ключом из secret store либо в защищённом хранилище сервиса; plaintext в task metadata/логах недопустим. Перед повтором submit проверьте фактическое наличие задачи по marker. Повтор complete с прежними token/worker/payload возвращает тот же job; конфликтующий payload отклоняется.
+Persist the `job_id → VALERIA task ID` mapping in a durable bridge registry **before** retrying after a timeout. Encrypt the secret lease token using a key from a secret store, or keep it in protected service storage; never put plaintext tokens in task metadata/logs. Before retrying submission, check whether a task with the marker already exists. Repeating complete with the original token/worker/payload returns the same job; a conflicting payload is rejected.
 
-После истечения lease job становится unknown_outcome и больше не выдаётся. Старый worker может согласовать известный исход по первоначальному capability. Heartbeat истёкшего lease запрещён; новый LLM-run не создаётся автоматически. Для отменённого job acknowledgement завершает cancellation без публикации результата.
+After lease expiry, a job becomes `unknown_outcome` and cannot be reassigned. The original worker can reconcile a known outcome using its original capability. An expired lease cannot be extended by heartbeat; a new LLM run is never created automatically. For a canceled job, acknowledgment completes cancellation without publishing the result.
 
-`context.sessions` пуст при выключенном `privacy.send_raw_transcripts_to_external`; это ожидаемое ограничение раскрытия. Чтобы включить внешнее обучение, администратор должен явно разрешить передачу очищенной истории. Содержимое skill packages для ревизии передаётся только назначенному executor по авторизованному scope.
+`context.sessions` is empty when `privacy.send_raw_transcripts_to_external` is disabled; this is the expected disclosure limit. To enable external learning, an administrator must explicitly permit sending redacted history. Skill package contents for review are shared only with the assigned executor within the authorized scope.
 
-Панель VALERIA может строиться непосредственно из manager.snapshot, а события опрашиваться через events.replay. Код UI самой VALERIA и её deployment требуют отдельного окружения проекта; серверный контракт готов для этой интеграции.
+The VALERIA dashboard can use `manager.snapshot` directly and poll events through `events.replay`. VALERIA's own UI and deployment require its separate project environment; the server contract is ready for that integration.

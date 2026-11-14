@@ -1,27 +1,27 @@
-# Автоматический куратор
+# Automatic curator
 
-Куратор обслуживает управляемые навыки текущего workspace: находит смысловые пересечения, предлагает правки, объединения и архивирование. Модель возвращает декларативный план, сервер проверяет его и сохраняет immutable proposals. Начальные настройки сохраняют ручную публикацию и выключенный LLM-проход.
+The curator maintains managed skills in the current workspace: it identifies semantic overlap and proposes edits, merges, and archival. The model returns a declarative plan; the server validates it and saves immutable proposals. Initial settings retain manual publication and disable the LLM optimization pass.
 
-## Управление
+## Controls
 
-Откройте `/skills-optimize`:
+Open `/skills-optimize`:
 
-- «Запустить сейчас» — однократный анализ выбранной в OpenCode моделью.
-- «Предварительный просмотр» — состав и размер проверяемых групп без обращения к модели и записи в БД.
-- «Автоматическая проверка» → «Смысловая оптимизация» — включить фоновые проходы. «Проверять устаревание» оставляет только lifecycle без LLM; «Выключена» отключает расписание.
-- «Расписание и параметры» — интервал, простой, размер групп и модель.
-- «Автоматическое объединение» — отдельное разрешение применять merge без одобрения. Дополнительно нужен режим «Автоматически» в `/skills-publication`.
-- «Состояние и отчёты» — расписание, задания, предложения и изменение размера библиотеки.
-- «Приостановить / Продолжить» — пауза куратора, без остановки обучения по перепискам.
-- «Подготовить откат изменения» — создать обратное предложение для конкретной применённой оптимизации. После просмотра его нужно одобрить и применить в менеджере.
+- **Run now** performs a single review using the model selected in OpenCode.
+- **Preview** shows the composition and size of batches without calling the model or writing to the database.
+- **Automatic review → Semantic optimization** enables background passes. **Check for stale skills** runs lifecycle checks without an LLM; **Disabled** turns off the schedule.
+- **Schedule and parameters** configures the interval, idle period, batch size, and model.
+- **Automatic merging** separately permits merge proposals to be applied without approval. Publication must also be set to **Automatic** in `/skills-publication`.
+- **Status and reports** shows the schedule, jobs, proposals, and changes to library size.
+- **Pause curator / Resume curator** pauses the curator without stopping conversation learning.
+- **Prepare rollback** creates an inverse proposal for one applied optimization. Review, approve, and apply it in the manager.
 
-## Расписание и модель
+## Schedule and model
 
-По умолчанию интервал — 168 часов, минимальный простой — 2 часа, до 8 навыков в группе и до 8 групп за проход. Первый запуск плагина сохраняет начальную дату в БД и ждёт полный интервал. Reload не сбрасывает расписание. События активности и native busy/idle-проверка не позволяют начать плановый проход во время ответа. Неподтверждённые исходы и уже ожидающие оптимизации блокируют новый проход; для подтверждённых отказов до принятия используется задержка повторов.
+Defaults are a 168-hour interval, a minimum idle period of 2 hours, up to 8 skills per batch, and up to 8 batches per pass. The first plugin start saves an initial timestamp in the database and waits for a full interval. Reload does not reset the schedule. Activity events and native busy/idle checks prevent scheduled passes from starting during a response. Unresolved outcomes and already queued optimization jobs block a new pass; confirmed rejections before acceptance use retry backoff.
 
-Вручную можно запускать анализ при выключенном расписании. Пауза curator/all и `settings.enabled=false` блокируют ручной запуск. Автоматический проход сначала выполняет lifecycle, затем LLM-оптимизацию при `llm_review_enabled=true`.
+Manual review remains available when the schedule is disabled. Pausing `curator`/`all` or setting `settings.enabled=false` blocks manual runs. An automatic pass runs lifecycle checks first, then LLM optimization when `llm_review_enabled=true`.
 
-JSON patch для расписания и автоматических объединений:
+JSON patch for the schedule and automatic merging:
 
 ```json
 {
@@ -39,34 +39,34 @@ JSON patch для расписания и автоматических объе�
 }
 ```
 
-Без явного переопределения расписание наследует модель последней доступной основной переписки. Если такой модели нет, действует базовая модель OpenCode. Ручная команда передаёт выбранную модель TUI. Стоимость и параллельность ограничиваются общей системой jobs; точность встроенного биллинга сохраняет ограничения SDK, описанные в ACCEPTANCE.md.
+Without an explicit override, scheduled review inherits the model of the most recent available primary conversation. If none is available, it uses OpenCode's base model. Manual commands pass the model selected in the TUI. The shared job system limits cost and concurrency; built-in accounting retains the SDK limitations documented in [ACCEPTANCE.md](ACCEPTANCE.md).
 
-## План и объединение
+## Plans and merging
 
-Кандидаты — активные или stale навыки плагина с management_policy=managed в текущем workspace. Manual, readonly, pinned, locked, чужие workspace и global исключаются. Полные пакеты передаются модели очищенными от известных секретов. Детерминированная группировка использует близость названий и описаний; смысловое решение принимает модель внутри ограниченной группы. Между всеми возможными парами большой библиотеки исчерпывающего сравнения нет.
+Candidates are active or stale plugin-owned skills with `management_policy=managed` in the current workspace. Manual, readonly, pinned, locked, foreign-workspace, and global skills are excluded. The model receives complete packages after known secrets are redacted. Deterministic grouping uses similarity between names and descriptions; the model makes the semantic decision within each bounded batch. It does not exhaustively compare every possible pair in a large library.
 
-Каждый переданный навык должен встретиться в плане ровно один раз: `keep`, `patch`, `merge` либо `archive`. Для изменяемых источников модель приводит буквальные цитаты из инструкций. Проверяются полный охват группы, допустимые идентификаторы, отсутствие пересекающихся действий, revision/hash, текущая policy и содержимое файлов на диске.
+Each supplied skill must appear exactly once in the plan: `keep`, `patch`, `merge`, or `archive`. For each changed source, the model supplies literal quotes from its instructions. Validation checks complete batch coverage, allowed identifiers, nonoverlapping actions, revisions/hashes, current policy, and actual files on disk.
 
-Merge создаёт связный корневой `SKILL.md`, который должен быть короче суммы исходных корневых инструкций. Все исходные файлы сохраняются побайтно в `sources/<skill_id>/`; новые инструкции обязаны ссылаться на перенесённые ресурсы. Скрипты не запускаются. Исходные навыки становятся `superseded` только при применении предложения. Для patch сохраняются все поддерживающие файлы и имя навыка. При включённом `archive_requires_evidence` архивирование требует наблюдавшегося использования и достаточного возраста после последнего использования/обновления.
+A merge creates a coherent root `SKILL.md` shorter than the combined source root instructions. Every source file is preserved byte for byte under `sources/<skill_id>/`; the new instructions must link to relocated resources. Scripts are not executed. Source skills become `superseded` only when the proposal is applied. Patches preserve every supporting file and the skill name. With `archive_requires_evidence` enabled, archival requires observed usage and sufficient time since the most recent use/update.
 
-Сжатие и цитаты не доказывают смысловую эквивалентность. Отчёт явно содержит `semantic_equivalence_verified:false`: модель может упустить важную деталь, поэтому начальная policy предусматривает просмотр diff. Количество основных инструкций может уменьшиться, а полный размер пакета — увеличиться из-за сохранённых исходников.
+Compression and quotes do not prove semantic equivalence. Reports explicitly contain `semantic_equivalence_verified:false`: the model may omit an important detail, so the initial policy requires reviewing the diff. Root instructions may shrink while the full package grows because original source files are retained.
 
-## Большая библиотека и отчёты
+## Large libraries and reports
 
-Каждое задание содержит одну группу полного контекста. Непроверенные идентификаторы сохраняются в долговременной очереди продолжения; `next_cursor` показывает наличие остатка. Слишком большой пакет пропускается с причиной `package_exceeds_context_limit`, защищённые — `protected_or_inactive`. Изменения уже проверенных навыков не сбрасывают продолжение: оставшиеся навыки получают актуальные revision/hash при следующем задании. Новые навыки попадают в следующий полный обход. Пропущенные записи доступны в ответе запуска и отчётах. Подбор групп эвристический и не гарантирует минимальное возможное число навыков.
+Each job contains one batch of complete context. Unreviewed identifiers remain in a durable continuation queue; `next_cursor` indicates remaining work. Oversized packages are skipped with `package_exceeds_context_limit`; protected packages use `protected_or_inactive`. Changes to reviewed skills do not reset the continuation: remaining skills receive current revisions/hashes when the next job is prepared. New skills enter the next full sweep. Run responses and reports include skipped entries. Group selection is heuristic and does not guarantee the smallest possible number of skills.
 
-`curator.status` содержит общие текущие размеры библиотеки и отчёты отдельных групп. В каждом отчёте различаются before, proposed и current: предложенные изменения не выдаются за применённые. Считаются активные/stale навыки, символы корневых инструкций и символы полных пакетов. Это показатели символов, а не точный токенизатор конкретного провайдера.
+`curator.status` contains current library-wide metrics and per-batch reports. Each report distinguishes `before`, `proposed`, and `current`: proposed changes are never presented as applied. Metrics count active/stale skills, root-instruction characters, and complete-package characters. These are character counts, not exact counts from a provider-specific tokenizer.
 
-Повторный план для тех же исходных ревизий использует прежнее предложение, включая отклонённое. Конфликтующая ожидающая оптимизация той же ревизии блокируется. Число принимаемых групп ограничивается свободным дневным бюджетом с учётом уже ожидающих заданий; остальные остаются в очереди продолжения. Принятые группы ставятся в очередь транзакционно; ошибка поздней группы откатывает принятие предыдущих.
+A repeated plan for the same source revisions reuses the existing proposal, including a rejected proposal. A conflicting pending optimization for the same revision is blocked. The available daily budget, including queued jobs, limits how many batches are accepted; the rest remain in the continuation queue. Accepted batches are enqueued transactionally; failure in a later batch rolls back acceptance of earlier batches.
 
-## Откат
+## Rollback
 
-Для каждого предложения сохраняются исходные полные пакеты и ожидаемое состояние после применения. `curator.rollback` создаёт обратное предложение: восстанавливает прежние исходники и архивирует новый объединённый навык. Откат требует отдельного одобрения даже при auto policy. Более поздние изменения revision/hash/state блокируют подготовку и применение отката. Откат одного предложения не отменяет остальные независимые изменения прохода.
+Each proposal stores complete original packages and the expected state after application. `curator.rollback` creates an inverse proposal: it restores the original sources and archives the newly merged skill. Rollback requires separate approval even under automatic publication policy. Later changes to revision, hash, or state block rollback preparation and application. Rolling back one proposal does not undo other independent changes from the pass.
 
 ## RPC
 
-- `curator.optimize`: `skill_ids?`, `skill_id?`, `cursor?`, `reason?`, `execution?`; обязательный idempotency key для запуска. Ответ: run_id, jobs, skipped, total, next_cursor. Dry-run возвращает batches и не пишет в БД.
-- `curator.status`: настройки, расписание, пауза, общие метрики, последние jobs и отчёты.
-- `curator.rollback`: proposal_id применённой оптимизации, expected_revision этого proposal, idempotency key; возвращает pending inverse proposal. Поддерживает dry-run.
+- `curator.optimize`: `skill_ids?`, `skill_id?`, `cursor?`, `reason?`, `execution?`; an idempotency key is required to run. Returns `run_id`, `jobs`, `skipped`, `total`, and `next_cursor`. Dry-run returns batches without database writes.
+- `curator.status`: settings, schedule, pause state, library metrics, recent jobs, and reports.
+- `curator.rollback`: the applied optimization's `proposal_id`, that proposal's `expected_revision`, and an idempotency key; returns a pending inverse proposal. Supports dry-run.
 
-Запуск и откат доступны curator/administrator, чтение — разрешённым ролям чтения. Изменение расписания и разрешений публикации требует administrator через settings.patch. Обычные правила tenant/workspace, глобальных прав и внешних worker leases сохраняются.
+Curators and administrators can run optimization and prepare rollback; authorized read roles can inspect status. Changing the schedule or publication permissions requires an administrator using `settings.patch`. Standard tenant/workspace isolation, global permissions, and external worker lease rules still apply.

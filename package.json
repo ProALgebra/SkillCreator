@@ -1,6 +1,6 @@
 {
   "name": "opencode-skill-curator",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Durable, proposal-first skill management for OpenCode and external workers",
   "type": "module",
   "license": "MIT",
@@ -24,7 +24,9 @@
     "docs",
     "examples",
     "LICENSE",
-    "TASKS.md"
+    "TASKS.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && babel dist/tui.jsx --out-file dist/tui.js && node scripts/clean-build.mjs",
@@ -32,8 +34,8 @@
     "test": "tsx --test test/*.test.ts",
     "check": "npm run typecheck && npm test && npm run build",
     "prepack": "npm run build",
-    "format": "prettier --write src test examples scripts .github docs README.md TASKS.md package.json tsconfig.json babel.config.json .prettierrc.json",
-    "format:check": "prettier --check src test examples scripts .github docs README.md TASKS.md package.json tsconfig.json babel.config.json .prettierrc.json",
+    "format": "prettier --write src test examples scripts .github docs README.md TASKS.md CHANGELOG.md CONTRIBUTING.md package.json tsconfig.json babel.config.json .prettierrc.json",
+    "format:check": "prettier --check src test examples scripts .github docs README.md TASKS.md CHANGELOG.md CONTRIBUTING.md package.json tsconfig.json babel.config.json .prettierrc.json",
     "test:bun": "bun test/bun-smoke.ts",
     "test:tui": "bun --conditions=browser test/tui-smoke.ts",
     "test:live": "node scripts/live-smoke.mjs",
@@ -79,5 +81,17 @@
     "solid-js": {
       "optional": true
     }
-  }
+  },
+  "homepage": "https://github.com/ProALgebra/SkillCreator#readme",
+  "bugs": {
+    "url": "https://github.com/ProALgebra/SkillCreator/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "skills",
+    "skill-management",
+    "agents",
+    "automation"
+  ]
 }

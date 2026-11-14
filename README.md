@@ -1,68 +1,92 @@
 # OpenCode Skill Curator
 
-Локальный npm-плагин управления библиотекой навыков для OpenCode **2.3.0**. Серверное ядро, TUI `/skills-manager`, RPC `skill-curator.v1`, Learner, Curator и внешние workers работают через общую проверку прав. VALERIA подключается по желанию.
+[![CI](https://github.com/ProALgebra/SkillCreator/actions/workflows/ci.yml/badge.svg)](https://github.com/ProALgebra/SkillCreator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Установка из исходников
+Turn completed OpenCode work into reusable skills, review your skill library, and manage changes through a terminal interface or RPC API.
 
-Нужны Node.js **22.21.1+**, npm и среда сборки native addons, если для `better-sqlite3` нет готового бинарного файла. TUI исполняется в runtime установленного OpenCode; его OpenTUI 0.8.4 требует Bun 1.3.14+ либо Node 26.4+. Для сборки и тестов серверного ядра достаточно Node 22.
+Skill Curator is an OpenCode plugin with a persistent SQLite catalog, conversation learning, semantic optimization, version history, and approval controls. It runs independently; external workers and V.A.L.E.R.I.A. integration are optional.
+
+## Features
+
+- **Learn from conversations.** Analyze the current conversation or a selected past conversation, including errors, corrections, tool results, and reusable procedures.
+- **Maintain the library.** Propose focused updates, consolidate overlapping skills, and review stale skills in bounded batches.
+- **Control publication.** Review proposals and diffs before applying them, or explicitly enable automatic publication and merging.
+- **Preserve complete packages.** Keep scripts, references, templates, and binary assets with their skills. Merges retain the original packages for recovery.
+- **Manage skills in the terminal.** Browse, search, edit, archive, restore, pin, lock, and inspect version history through `/skills-manager`.
+- **Integrate through RPC.** Use the same authorization, revisions, idempotency, budgets, and job lifecycle from the TUI, TypeScript/Python clients, or external workers.
+
+## Requirements
+
+| Component              | Supported version                                                                  |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| OpenCode               | **2.3.0**, with `@opencode/plugin` and `@opencode/client` pinned to that version   |
+| Build and server tests | Node.js **22.21.1+** and npm                                                       |
+| TUI test runtime       | Bun **1.3.14+**, included as a development dependency                              |
+| Native SQLite          | A native addon build toolchain if `better-sqlite3` has no matching prebuilt binary |
+
+The TUI runs inside OpenCode. The pinned OpenTUI runtime requires Bun 1.3.14+ or Node 26.4+; Node 22 is sufficient to build and test the server core. CI checks Node 22 and 24 on Linux.
+
+## Install from source
+
+The package has not been published to npm. Build it from this repository:
 
 ```bash
 git clone https://github.com/ProALgebra/SkillCreator.git
 cd SkillCreator
 npm ci
-npm run check
+npm run build
 npm pack
 ```
 
-Добавьте локальный каталог этого проекта в `opencode.jsonc`:
+Add the plugin to your OpenCode server configuration, usually `~/.config/opencode/opencode.jsonc`. Replace the path with your absolute checkout or extracted package directory:
 
 ```json
 {
   "plugins": [
     {
-      "package": "/absolute/path/to/skillCreator",
-      "options": { "tenant_id": "local", "local_service_auth": true }
+      "package": "/absolute/path/to/SkillCreator",
+      "options": {
+        "tenant_id": "local",
+        "local_service_auth": true
+      }
     }
   ]
 }
 ```
 
-Для локального сервиса `local_service_auth: true` позволяет серверу и TUI получить одинаковый capability из существующих закрытых учётных данных OpenCode. Отдельный токен не записывается в конфигурацию, БД или на диск; ручной экспорт переменной не нужен. Этот режим рассчитан на сервер и TUI, запущенные от одного пользователя ОС. Он выключен по умолчанию. Проверка файла учётных данных описана в [модели безопасности](docs/SECURITY.md).
+Add the same plugin entry to `~/.config/opencode/cli.json`. OpenCode 2.3 shares the plugin path with the TUI, but the CLI must receive its options separately.
 
-В установленной пользовательской конфигурации пакет подключён из `~/.local/share/opencode/skill-curator-runtime/releases/0.3.1-a15497222b92`; изменения исходников не заменяют установленную сборку. Каталог данных по умолчанию — `.curator` внутри выбранного проекта. Workspace определяется из location OpenCode; `workspace_id` можно задать явно для отдельной конфигурации.
+`local_service_auth` derives a capability token from the existing private OpenCode service credentials. It is intended for the server and TUI running as the same operating-system user. The plugin does not write an additional token to disk. For a custom token or remote client, configure `SKILL_CURATOR_TOKEN` for both processes instead; see [authentication and security](docs/SECURITY.md).
 
-Если локальные учётные данные сервиса недоступны или требуется собственный capability, задайте токен минимум из 24 символов в окружении **сервера и TUI**. Переменная `SKILL_CURATOR_TOKEN` имеет приоритет над `local_service_auth`:
+Start OpenCode, or run `opencode reload` if its service is already running. Restart an open CLI after changing its plugin configuration, then run `/skills-manager`.
 
-```bash
-export SKILL_CURATOR_TOKEN="$(openssl rand -hex 32)"
-opencode
-```
+The default data directory is `.curator` in the selected project. Published skills become available in OpenCode's native skill list without restarting the service. Pending proposals appear in Skill Curator until they are approved and applied.
 
-В OpenCode 2.3 сервер автоматически сообщает TUI о плагине, но не передаёт его опции. Добавьте этот же объект `package`/`options` в `~/.config/opencode/cli.json`: локальному менеджеру тоже требуется явное `local_service_auth: true`. При явных `token_env` или `workspace_id` повторите соответствующие опции в CLI-конфигурации.
+For upgrades, service configuration, source directories, and troubleshooting, see the [operations guide](docs/OPERATIONS.md). OpenCode 2.3 caches transitive imports inside `node_modules`; use a fresh release directory outside `node_modules` when replacing an installed build.
 
-Откройте `/skills-manager`. Команды `/skills-review`, `/skills-learn`, `/skills-refine`, `/skills-jobs`, `/skills-settings`, `/skills-publication` запускают соответствующие диалоги. В менеджере доступны поиск, архив, полные файлы пакета, создание/редактирование, diff/approval, версии, задания, настройки и аудит. Ревизия и обучение из TUI используют выбранную в OpenCode модель. Во внешнем RPC задавайте `execution.provider` и `execution.model` явно либо настройте базовую модель OpenCode.
+## Commands
 
-В каталоге можно выбирать навык мышью или стрелками ↑/↓, а Enter открывает действия. Ctrl+R синхронизирует источники OpenCode и обновляет список. Встроенные навыки с путями `skill://` отображаются как readonly: их API-снимок доступен для просмотра, но не заменяет полный пакет для публикации.
+| Command               | Purpose                                                                |
+| --------------------- | ---------------------------------------------------------------------- |
+| `/skills-manager`     | Browse skills, inspect files, and manage proposals and versions        |
+| `/skills-refine`      | Extract reusable knowledge from the current or a past conversation     |
+| `/skills-learn`       | Learn from verified imported evidence                                  |
+| `/skills-review`      | Review selected or eligible skills                                     |
+| `/skills-optimize`    | Run semantic optimization, configure its schedule, and inspect reports |
+| `/skills-publication` | Switch between manual and automatic publication                        |
+| `/skills-jobs`        | Inspect and manage background jobs                                     |
+| `/skills-settings`    | Edit settings and publication policy                                   |
 
-Для подключения удалённого клиента настройте capability через окружение и защищённое соединение к серверу OpenCode. Дополнительные principals привязываются к отдельным переменным окружения; пример — [VALERIA configuration](examples/opencode.valeria.jsonc). Не выдавайте workers административный токен.
+In the manager, select a skill with the mouse or **↑/↓**, press **Enter** for actions, use **Ctrl+F** or **Tab** for search, and **Ctrl+R** to synchronize sources. Built-in `skill://` sources are available as read-only previews; an API snapshot does not substitute for a complete publishable package.
 
-## Поведение
+## Learning and publication
 
-- SQLite/WAL хранит каталог, снимки всех файлов, предложения, задания, leases, события, аудит и настройки. Node использует better-sqlite3, Bun/OpenCode — встроенный bun:sqlite. Журнал публикаций восстанавливает целые пакеты после аварии.
-- LLM возвращает структурированные кандидаты/предложения. Публикация проходит через валидацию, approval, проверку revision и package hash. Начальный режим — ручное одобрение.
-- Merge сохраняет **полные пакеты** в `sources/<skill_id>/`, включая бинарные assets. Предложение предупреждает о скриптах, зависящих от текущего каталога. Скрипты автоматически не запускаются.
-- `manual`, `readonly`, `locked` и `pinned` ограничивают автоматику. Сторонний пакет сначала клонируется в управляемую библиотеку. Нулевое использование не считается доказательством неактуальности.
-- `direct`, `session`, `valeria`, `external`, `auto` выбираются для вызова, типа операции и workspace. Выбранный режим сохраняется в job. После принятия задания fallback запрещён.
-- Сырые транскрипты не попадают во внешние workers без отдельного разрешения. Секреты и некоторые персональные данные маскируются до хранения и обращения к модели.
-- Разбор переписки использует недоверенный снимок сообщений и результатов инструментов; цитаты проверяются буквально, но это не считается независимой проверкой выводов модели. Отдельный `/skills-learn` использует только источники с `verified:true`.
+`/skills-refine` analyzes the SDK-visible context of a conversation in the selected project. The model can propose a new skill, update an eligible managed skill, or return no candidates. Locked, pinned, manual, and third-party skills are protected from automatic changes.
 
-## Обучение по переписке
+Automatic conversation review is enabled by default. It counts completed tool calls, including failed calls, within each conversation. After **10 actions** and a successfully completed reply, it waits **30 seconds**, checks that the conversation is idle, and queues a review. Counters survive reloads; internal plugin sessions are excluded. Historical conversations are analyzed when selected explicitly, rather than scanned automatically at startup.
 
-`/skills-refine` запускает разбор текущей или выбранной прошлой переписки этого проекта, включая архивные записи. Можно указать фокус: например, «извлеки способ диагностики ошибки сборки». Модель получает доступный через SDK контекст: сообщения, действия, ошибки, исправления и результаты. Она может вернуть пустой результат, предложить новый навык или дополнение существующего управляемого навыка. Полный пакет при обновлении сохраняется; дополнение видно в diff. Заблокированные, закреплённые, ручные и сторонние навыки автоматически не изменяются.
-
-Автоматический разбор включён по умолчанию. В каждой переписке считаются завершённые вызовы инструментов, включая ошибки. После **10 действий** и успешного завершения ответа планировщик ждёт 30 секунд, проверяет состояние idle и ставит фоновое задание. Счётчик может накапливаться за несколько ответов одной переписки; разные переписки считаются отдельно. Внутренние сессии плагина исключены. Счётчики и защита от повторной обработки сохраняются при reload. Архив старых переписок автоматически не обходится.
-
-Автоматический анализ наследует модель исходной переписки. Явное переопределение и порог задаются через `/skills-settings` → JSON patch:
+The model normally follows the source conversation. Override it or change thresholds through `/skills-settings` using a JSON patch:
 
 ```json
 {
@@ -71,33 +95,38 @@ opencode
     "every_n_actions": 10,
     "min_age_sec": 30,
     "debounce_sec": 5,
-    "provider": "deepseek",
-    "model": "deepseek-flash"
+    "provider": "your-provider-id",
+    "model": "your-model-id"
   }
 }
 ```
 
-Без `provider`/`model` используется модель переписки, а при её отсутствии — базовая модель OpenCode. Паузы learning, `auto_learning.enabled`, `on_session_end`, `quiet_hours` (UTC), `include_child_sessions`, лимиты расходов и параллельности также действуют. Если `conversation_review.enabled=false`, сохраняется прежний автоматический режим: накопление `auto_learning.every_n_sessions` подтверждённых фрагментов, например успешных тестовых команд.
+The scheduler also respects learning pauses, `auto_learning.enabled`, `on_session_end`, `quiet_hours` in UTC, child-session settings, and budget/concurrency limits. If `conversation_review.enabled=false`, the original verified-fragment trigger remains available through `auto_learning.every_n_sessions`, for example using successful test-command results.
 
-По умолчанию результат — **предложение**, которое нужно одобрить и применить в менеджере. Чтобы отключить ручное одобрение, откройте **`/skills-settings` → «Публикация навыков» → «Автоматически»**. Прямая команда — **`/skills-publication`**. Переключатель одновременно разрешает автоматическое создание новых навыков и low-risk обновления управляемых навыков. Выбор «Вручную» возвращает одобрение перед публикацией. Исходный режим остаётся ручным.
+**Publication requires manual approval by default.** To enable automatic creation and eligible low-risk updates, choose `/skills-publication` → **Automatic**. Choose **Manual** to restore approval. The switch applies to future analysis results and does not apply existing pending proposals.
 
-Режим применяется к следующим результатам анализа. Переключение само по себе не применяет накопленные pending-предложения. Проверки источников, revision/hash и защиты навыков сохраняются. Настройки автоматического архивирования переключатель не меняет; ранее разрешённое архивирование действует при `approval.mode=auto`.
+Conversation snapshots are unverified input. Literal source quotations provide a review trail, but do not independently verify a model's conclusions. `/skills-learn` is the separate path for sources marked `verified:true`. Context may be truncated, and compacted conversations may no longer contain their original messages.
 
-Через RPC доступен `settings.set_publication_mode` с `publication_mode:"auto"` или `"manual"`, актуальным `expected_revision` настроек и `idempotency_key`. Требуется administrator. Для выборочного разрешения только новых навыков по-прежнему доступен JSON patch:
+## Automatic curation
 
-```json
-{ "approval": { "mode": "auto", "allow_auto_create": true } }
-```
+Use `/skills-optimize` → **Run now** to review the library. For scheduled analysis, select **Automatic review → Semantic optimization**.
 
-Для автоматического обновления также нужен `allow_auto_patch_managed_low_risk:true`. Разрешения независимы. Модель не может поменять эти настройки. Большой контекст явно помечается как сокращённый; после compaction SDK может вернуть только сохранённое представление истории. Полнота исходных сообщений за пределами этого представления не гарантируется.
+| Setting                          | Default                                            |
+| -------------------------------- | -------------------------------------------------- |
+| Semantic background optimization | Disabled                                           |
+| Review interval                  | 168 hours / 7 days                                 |
+| Required inactivity              | 2 hours                                            |
+| Maximum group size               | 8 skills                                           |
+| Maximum groups per pass          | 8, subject to context and budget limits            |
+| Automatic merging                | Disabled; also requires automatic publication mode |
 
-## Автоматический куратор
+The model returns a structured `keep`, `patch`, `merge`, or `archive` plan. The server validates scope, source revisions and hashes, protection policies, package resources, and source coverage. Merges create compact root instructions and retain complete original packages under `sources/<skill_id>/`.
 
-Команда **`/skills-optimize`** запускает смысловой анализ библиотеки: сохранить, улучшить, объединить или архивировать навыки. Для фонового режима выберите «Автоматическая проверка» → «Смысловая оптимизация». По умолчанию интервал — 7 дней и минимум 2 часа простоя; расписание сохраняется при reload. Модель пишет компактные общие инструкции, исходные пакеты и ресурсы сохраняются для восстановления.
+Preview does not call a model or write to the database. Reports distinguish proposed changes from applied changes. Rollback prepares a separate proposal that requires approval. Semantic equivalence is not proven by size reduction or source quotations; review the diff when evaluating a consolidation. See the [curator guide](docs/CURATOR.md) for settings, limits, and recovery.
 
-Автоматическое применение merge требует одновременно `approval.mode=auto` и **`allow_auto_merge=true`**. Эти настройки доступны через `/skills-publication` и отдельный пункт «Автоматическое объединение» в `/skills-optimize`. Изначально LLM-проход и auto-merge выключены. Предварительный просмотр состава проверки не обращается к модели; отчёт различает предложенные и применённые изменения. Откат готовит отдельное предложение с ручным одобрением. Полное описание и ограничения смысловой проверки — [CURATOR.md](docs/CURATOR.md).
+## RPC and external workers
 
-## API и интеграция
+The public contract is `skill-curator.v1`, exported from `opencode-skill-curator/rpc`:
 
 ```ts
 import { OpenCode } from '@opencode/client';
@@ -112,24 +141,39 @@ const skills = await curator['skills.list'](
 console.log(skills.items);
 ```
 
-Мутации требуют `idempotency_key`, изменения существующих сущностей — `expected_revision`. Тяжёлые операции возвращают job. `dry_run` показывает предполагаемый результат без публикации файлов.
+Configure the OpenCode connection credentials separately if the service requires them. Mutations require an `idempotency_key`; changes to existing entities also require `expected_revision`. Background operations return jobs. External worker modes support leases, heartbeats, budgets, and reconciliation of uncertain outcomes.
 
-Документация: [архитектура](docs/ARCHITECTURE.md), [RPC](docs/RPC.md), [VALERIA и Python bridge](docs/VALERIA.md), [безопасность](docs/SECURITY.md), [backup/restore и troubleshooting](docs/OPERATIONS.md), [приёмка и ограничения](docs/ACCEPTANCE.md), [проверка установленного плагина](docs/INSTALLATION_CHECK.md). Ход реализации — [TASKS.md](TASKS.md).
+See the [RPC reference](docs/RPC.md), [TypeScript example](examples/client.ts), and [VALERIA / Python bridge guide](docs/VALERIA.md).
 
-## Совместимость
+## Documentation
 
-Плагин подключён к установленному OpenCode **2.3.0**. В работающем сервисе проверены health с `bun:sqlite`, отказ RPC без capability, создание навыка, его видимость в OpenCode, архивирование и восстановление без перезапуска сервиса. Проверены типы SDK, сборка и 147 тестов серверного ядра и адаптеров. Результаты отдельных проверок TUI и модели фиксируются в [отчёте установки](docs/INSTALLATION_CHECK.md).
+| Guide                                             | Contents                                                        |
+| ------------------------------------------------- | --------------------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)              | Modules, persistence, publication, and execution flow           |
+| [Curator](docs/CURATOR.md)                        | Optimization, schedules, reports, and rollback                  |
+| [Operations](docs/OPERATIONS.md)                  | Configuration, upgrades, backup, restore, and troubleshooting   |
+| [Security](docs/SECURITY.md)                      | Capabilities, scope isolation, privacy, and approval boundaries |
+| [Acceptance and limitations](docs/ACCEPTANCE.md)  | Verified behavior and SDK limitations                           |
+| [Installation checks](docs/INSTALLATION_CHECK.md) | Recorded checks against a real OpenCode service                 |
+| [Specification](docs/SPECIFICATION.md)            | Original design requirements                                    |
+| [Task history](TASKS.md)                          | Implementation and verification record                          |
 
-SDK 2.3 не передаёт идентичность пользователя в plugin RPC context и не позволяет фильтровать RPC live events по capability. Поэтому авторизация выполняется собственным capability-конвертом, а события читаются через защищённый `events.replay`. Встроенный `direct` API возвращает только текст: учёт расходов консервативно списывает резерв; жёсткий лимит фактического счёта провайдера этим API не гарантируется. Для точного биллинга используйте worker с подтверждёнными расходами. Подробности и границы первой реализации перечислены в `docs/ACCEPTANCE.md`.
+The built-in direct API returns text without provider usage details, so billing conservatively consumes the reserved budget. It does not enforce a hard provider invoice limit. The SDK also lacks authenticated caller identity and private live-event filtering for plugin RPC; Skill Curator uses capability authentication and authorized durable event replay.
 
-## Проверки
+## Development
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+npm ci
+npm run check
 npm run test:bun
 npm run test:tui
+npm run format:check
+npm pack
+npm run test:package
 ```
 
-CI запускает эти проверки на Linux с Node 22 и 24, проверяет состав tarball. Тесты покрывают права, optimistic locking, идемпотентность, архив/restore/rollback, сохранность пакетов при merge/split, Learner provenance, policy, маршрутизацию, leases/heartbeat/reconciliation, лимиты и аварийное восстановление отдельного процесса.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and [CHANGELOG.md](CHANGELOG.md) for release notes. Tests cover authorization, revision conflicts, idempotency, package integrity, learning evidence, scheduling, publication policies, worker routing, budgets, and crash recovery.
+
+## License
+
+[MIT](LICENSE) © 2026 ProALgebra.

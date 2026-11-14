@@ -400,7 +400,7 @@ export class CuratorCore {
     switch (method) {
       case 'system.health':
         return {
-          version: '0.3.1',
+          version: '0.3.2',
           rpc_version: 'skill-curator.v1',
           sdk_version: '2.3.0',
           storage: 'sqlite-wal',

@@ -1,7 +1,7 @@
 {
   "plugins": [
     {
-      "package": "/absolute/path/to/skillCreator",
+      "package": "/absolute/path/to/SkillCreator",
       "options": {
         "tenant_id": "team-a",
         "workspace_id": "my-project",
