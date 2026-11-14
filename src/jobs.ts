@@ -60,6 +60,14 @@ export type Executor = (input: {
   signal: AbortSignal;
 }) => Promise<{ output: unknown; cost_usd?: number }>;
 
+/** An executor explicitly confirms that validation failed before any provider work began. */
+export class ExecutorPreflightError extends CuratorError {
+  constructor(error: CuratorError) {
+    super(error.code, redact(error.message));
+    this.name = 'ExecutorPreflightError';
+  }
+}
+
 function providerRejection(error: unknown): Job['error'] | undefined {
   if (!error || typeof error !== 'object') return;
   const value = error as Record<string, unknown>;
@@ -633,7 +641,8 @@ export class JobService {
             .catch((error) => {
               const current = this.get(j, j.job_id);
               if (current.status !== 'running') return;
-              const rejected = providerRejection(error);
+              const rejected =
+                error instanceof ExecutorPreflightError ? error.toJSON() : providerRejection(error);
               if (rejected) {
                 current.status = 'failed';
                 current.error = rejected;

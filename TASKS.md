@@ -29,6 +29,22 @@
 18. [x] Подготовить файлы к публикации, проверить исключения и отсутствие секретов, выполнить проверки перед коммитом. Проверены форматирование, состав npm-пакета, portable paths и исключение локальных данных; MIT-лицензия исходного репозитория сохранена.
 19. [x] Создать коммит, отправить его в GitHub и проверить совпадение локального и удалённого коммита. Плагин опубликован коммитом `70d8c83` в `origin/master`; SHA удалённой ветки подтверждён.
 
+## Анализ переписок по модели Hermes
+
+20. [x] Добавить анализ полного контекста выбранной переписки: сообщения, действия, ошибки, исправления и результаты; сохранить очистку секретов и проверяемые ссылки на источники. Проверены недоверенный immutable snapshot, redaction и явное сокращение большого контекста.
+21. [x] Научить анализатор предлагать новый навык или обновление подходящего существующего, учитывая версии и защиту ручных/заблокированных навыков. Проверены сохранение ресурсов пакета, захваченные revision/hash и защита manual/readonly/locked/pinned.
+22. [x] Добавить автоматический анализ после завершения ответа и накопления заданного числа действий; исключить повторы, внутренние сессии и незавершённые ответы. Порог — 10 действий на переписку; проверены restart, interruption, idle, backoff и неизвестные исходы.
+23. [x] Добавить `/skills-refine` для текущей или выбранной прошлой переписки и передачу выбранной модели. Headless OpenTUI проверяет текущую/историческую переписку, отмену, ошибки, location и модель.
+24. [x] Добавить отдельное разрешение автоматической публикации новых навыков; оставить подтверждение по умолчанию. Нужны одновременно `approval.mode=auto` и `allow_auto_create=true`.
+25. [x] Проверить сценарии, ограничения доступа, очистку секретов, дедупликацию и автоматический запуск; обновить документацию. Итог: 94 теста, typecheck/build, Bun, OpenTUI, форматирование и проверка npm-пакета прошли.
+26. [x] Обновить установленный плагин и проверить новые команды и анализ через реальный OpenCode. Установлена `0.2.0-48a202a3be56` в server/CLI; native `/skills-refine` открывает историю. Живые direct/session jobs завершены; тестовые переписки архивированы и предложения отменены. Health healthy, автопорог 10 действий, публикация manual, незавершённых jobs нет.
+
+## Переключение публикации
+
+27. [x] Добавить отдельный RPC и понятный переключатель ручной/автоматической публикации в TUI. `settings.set_publication_mode`, `/skills-publication`, «Настройки → Публикация навыков»; автоматический режим разрешает создание и обновление управляемых навыков, отключение возвращает ручное одобрение.
+28. [x] Проверить переключение режимов, права, revision/idempotency, автоматическую публикацию и возврат ручного подтверждения; обновить документацию и установленный плагин. 102 теста, build, Bun/OpenTUI и npm-пакет прошли. Установлена `0.2.1-b0438569a32f`; в живом RPC проверены preview, auto/manual и replay, в native TUI открыт диалог `/skills-publication`. После проверки восстановлен исходный manual.
+29. [x] Сделать коммит с анализом переписок и переключателем публикации после необходимых проверок. Создан `feat: add conversation review and publication mode controls`; 102 теста и дополнительные проверки прошли.
+
 ## Проверки и принятые решения
 
 - Исходный каталог содержит только ТЗ; существующего кода, Git-репозитория и локальных соглашений нет.
@@ -39,10 +55,11 @@
 - TypeScript-сборка серверной части, RPC и Solid/OpenTUI прошла; проверены реальные типы SDK. В SDK 2.3 direct generate возвращает только текст: встроенный адаптер учитывает полный резерв стоимости, точную стоимость предоставляет внешний executor.
 - Проверены lifecycle, merge с binary assets, approvals, revision/idempotency conflicts, lease/heartbeat/reconciliation, бюджеты, redaction и provenance. Crash recovery проверен прерыванием настоящего дочернего процесса; SDK adapter — contract tests.
 - Ограничение SDK 2.3: у RPC context нет authenticated principal и фильтрации private live events. Реализован capability envelope и авторизованный durable events.replay; приватный общий broadcast не используется.
-- Финальный `npm run check` прошёл: typecheck, **57 тестов**, build. Проверены HTTP/Python integration, global skills, наследование global/tenant/workspace settings и административное согласование unknown outcomes.
+- Для первоначальной версии 0.1.0 `npm run check` прошёл: typecheck, **57 тестов**, build. Проверены HTTP/Python integration, global skills, наследование global/tenant/workspace settings и административное согласование unknown outcomes.
 - Дополнительно прошли `test:bun` (Bun 1.3.14, native SQLite lifecycle/restart/backup), `test:tui` (настоящий headless OpenTUI frame/каталог/slash-команды), `format:check` и `test:package` (exports и SQLite core из извлечённого tarball).
 - Создан `opencode-skill-curator-0.1.0.tgz`; server/tui/rpc exports присутствуют. В поставку не вошли node_modules, БД, токены, .env и Python cache. CI включает серверные, Bun/TUI и package проверки.
 - `npm audit --omit=dev`: 0 high/critical, 26 moderate transitive advisories закреплённого SDK/OpenTUI. Прямые Zod/YAML/diff обновлены.
 - При первоначальной сборке живая инсталляция не проверялась. После отдельного запроса пользователя OpenCode 2.3.0 подключён и проверен: native TUI, RPC, skill lifecycle, direct/session с DeepSeek. VALERIA по-прежнему проверена только на уровне контрактов. Подробности — `docs/INSTALLATION_CHECK.md`.
 
-- Живая установка завершена: версия сборки в `skill-curator-runtime/releases/0.1.0-8d27edfd0f27`, server и CLI настроены, native TUI открыт; последние direct/session jobs DeepSeek завершены, явный HTTP 429 не блокирует очередь. 57 тестов и package/Bun/TUI проверки прошли.
+- Первоначальная живая установка 0.1.0: сборка `skill-curator-runtime/releases/0.1.0-8d27edfd0f27`, server и CLI настроены, native TUI открыт; direct/session jobs DeepSeek завершены, явный HTTP 429 не блокирует очередь. 57 тестов и package/Bun/TUI проверки прошли.
+- Обновление 0.2.0: 94 теста и все дополнительные проверки прошли; собран `opencode-skill-curator-0.2.0.tgz`, установлена сборка `releases/0.2.0-48a202a3be56`. Полный отчёт и ограничения SDK — `docs/INSTALLATION_CHECK.md`.

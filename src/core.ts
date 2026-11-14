@@ -13,6 +13,7 @@ import {
   validatePackageLinks,
 } from './learning.js';
 import { JobService, type Job, type Executor } from './jobs.js';
+import { ConversationReviewService, type Conversations } from './refine.js';
 import { inputSchema, methodNames, type MethodName, type RpcInput } from './rpc.js';
 import { authorize, hash } from './security.js';
 import { ensure, CuratorError } from './errors.js';
@@ -25,6 +26,7 @@ export interface CoreOptions {
   executors?: Partial<Record<'direct' | 'session', Executor>>;
   reload?: () => Promise<void>;
   discover?: () => Promise<void>;
+  conversations?: Conversations;
 }
 const readMethods = new Set<MethodName>([
   'system.health',
@@ -42,6 +44,7 @@ const readMethods = new Set<MethodName>([
   'skills.usage',
   'skills.dependencies',
   'learning.candidates',
+  'learning.sessions',
   'curator.analyze_duplicates',
   'proposals.list',
   'proposals.get',
@@ -64,6 +67,7 @@ const adminMethods = new Set<MethodName>([
   'system.resume',
   'system.shutdown_work',
   'settings.patch',
+  'settings.set_publication_mode',
   'settings.reset',
   'executors.set_policy',
 ]);
@@ -75,6 +79,7 @@ const workerMethods = new Set<MethodName>([
 ]);
 const curatorMethods = new Set<MethodName>([
   'learning.run',
+  'learning.refine',
   'learning.backfill',
   'learning.ingest',
   'curator.review',
@@ -104,6 +109,7 @@ export class CuratorCore {
   readonly catalog: Catalog;
   readonly settings: SettingsService;
   readonly learning: LearningService;
+  readonly conversationReview: ConversationReviewService;
   readonly jobs: JobService;
   private gate: Promise<unknown> = Promise.resolve();
   private closed = false;
@@ -115,6 +121,12 @@ export class CuratorCore {
     );
     this.settings = new SettingsService(this.store);
     this.learning = new LearningService(this.store, (s) => this.settings.get(s).settings);
+    this.conversationReview = new ConversationReviewService(
+      this.store,
+      this.learning,
+      this.catalog,
+      (s) => this.settings.get(s).settings,
+    );
     this.jobs = new JobService(
       this.store,
       (s) => {
@@ -377,7 +389,7 @@ export class CuratorCore {
     switch (method) {
       case 'system.health':
         return {
-          version: '0.1.0',
+          version: '0.2.1',
           rpc_version: 'skill-curator.v1',
           sdk_version: '2.3.0',
           storage: 'sqlite-wal',
@@ -419,6 +431,22 @@ export class CuratorCore {
           valid: true,
           settings: this.settings.validate(scope, i.patch ?? {}, i.settings_level),
         };
+      case 'settings.set_publication_mode': {
+        const automatic = this.required(i.publication_mode, 'publication_mode') === 'auto';
+        const patch = {
+          approval: {
+            mode: automatic ? 'auto' : 'manual',
+            allow_auto_create: automatic,
+            allow_auto_patch_managed_low_risk: automatic,
+          },
+        };
+        return dry
+          ? {
+              ...this.settings.get(scope, i.settings_level),
+              settings: this.settings.validate(scope, patch, i.settings_level),
+            }
+          : this.settings.patch(scope, actor, patch, rev(), false, i.settings_level);
+      }
       case 'settings.patch':
       case 'settings.reset':
         return dry
@@ -635,6 +663,85 @@ export class CuratorCore {
       }
       case 'learning.candidates':
         return this.page(this.learning.candidates(scope), i);
+      case 'learning.sessions': {
+        ensure(
+          this.options.conversations,
+          'executor_unavailable',
+          'OpenCode conversation history is unavailable',
+        );
+        const items = (await this.options.conversations.list(scope, i.limit ?? 50))
+          .filter((s) => !this.store.get('control', 'internal:' + s.session_id))
+          .map((s) => ({ session_id: s.session_id, title: redact(s.title) }));
+        return {
+          items,
+          cursor: null,
+          total: items.length,
+        };
+      }
+      case 'learning.refine': {
+        ensure(
+          this.options.conversations,
+          'executor_unavailable',
+          'OpenCode conversation history is unavailable',
+        );
+        ensure(
+          i.session_ids?.length === 1,
+          'validation_error',
+          'Conversation review requires exactly one session_id',
+        );
+        const sessionID = i.session_ids[0]!;
+        ensure(
+          !this.store.get('control', 'internal:' + sessionID),
+          'forbidden',
+          'Internal curator conversations cannot be reviewed',
+        );
+        const paused = this.store.get<{ all?: boolean; learning?: boolean }>(
+          'control',
+          'pause:' + hash(scope),
+        );
+        const settings = this.settings.get(scope).settings;
+        ensure(
+          settings.enabled && !paused?.all && !paused?.learning,
+          'executor_unavailable',
+          'Learning is paused in this scope',
+        );
+        const snapshot = await this.options.conversations.read(scope, sessionID);
+        const execution =
+          !i.execution?.provider && !i.execution?.model && snapshot.model
+            ? { ...snapshot.model, ...i.execution }
+            : i.execution;
+        const mode = this.jobs.resolve(scope, 'learning', execution);
+        ensure(
+          !(mode === 'external' || mode === 'valeria') ||
+            settings.privacy.send_raw_transcripts_to_external,
+          'forbidden',
+          'External conversation review requires raw-transcript privacy opt-in',
+        );
+        const prepared = this.conversationReview.prepare(
+          scope,
+          sessionID,
+          snapshot.content,
+          i.reason?.trim() || undefined,
+        );
+        if (dry)
+          return {
+            operation: 'learning',
+            executor_mode: mode,
+            potential_changes: [],
+            files_written: false,
+            review: true,
+            truncated: prepared.payload.truncated,
+            original_chars: prepared.payload.original_chars,
+          };
+        return this.jobs.run(
+          scope,
+          actor,
+          'learning',
+          this.conversationReview.capture(scope, actor, prepared),
+          execution,
+          this.required(i.idempotency_key, 'idempotency_key'),
+        );
+      }
       case 'curator.analyze_duplicates':
         return this.page(
           deterministicReview(this.catalog.list(scope), this.settings.get(scope).settings).filter(
@@ -894,6 +1001,8 @@ export class CuratorCore {
     }
   }
   modelPayload(job: Job, external = false): Record<string, unknown> {
+    if (job.operation === 'learning' && job.payload.review)
+      return this.conversationReview.buildPayload(job, external);
     if (job.operation === 'learning')
       return this.learning.buildPayload(
         job,
@@ -929,6 +1038,8 @@ export class CuratorCore {
     const scope: Scope = { tenant_id: job.tenant_id, workspace_id: job.workspace_id };
     const ids = this.store.transaction(() => {
       if (job.payload.test) return [];
+      if (job.operation === 'learning' && job.payload.review)
+        return this.conversationReview.acceptResult(job, result);
       if (job.operation === 'merge') {
         ensure(
           result &&
@@ -1095,7 +1206,12 @@ export class CuratorCore {
         policy.allow_auto_archive_managed &&
         proposal.operation === 'archive' &&
         proposal.changes.every((c) => c.action === 'archive');
-      if (!patch && !archive) continue;
+      const create =
+        policy.allow_auto_create &&
+        proposal.risk_level === 'low' &&
+        proposal.operation === 'create' &&
+        proposal.changes.every((c) => c.action === 'create');
+      if (!patch && !archive && !create) continue;
       const approved = this.catalog.decide(
         scope,
         'system.policy',

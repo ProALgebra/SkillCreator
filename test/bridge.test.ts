@@ -49,5 +49,5 @@ test('HTTP bridge and Python SDK preserve authorization and RPC errors', async (
   child.stderr.on('data', (data) => (stderr += data));
   const exit = await new Promise<number | null>((resolve) => child.on('exit', resolve));
   assert.equal(exit, 0, stderr);
-  assert.equal(JSON.parse(stdout).version, '0.1.0');
+  assert.equal(JSON.parse(stdout).version, '0.2.1');
 });

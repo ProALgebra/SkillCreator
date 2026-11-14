@@ -16,7 +16,11 @@
 - Перезапуск с сохранением state/leases и настоящий crash дочернего процесса посреди publication до/после commit.
 - HTTP bridge и Python client по loopback с теми же правами и ошибками.
 
-Финальный прогон: 57 unit/integration/security/contract/recovery/e2e tests, отдельный Bun SQLite smoke test и настоящий OpenTUI headless smoke test. Сборка и проверка exports извлечённого npm tarball прошли.
+Версия 0.2.0 добавляет conversation review: immutable unverified snapshot → candidate → proposal, создание/дополнение навыков с защитой policy/revision, автоматический запуск после действий и завершения ответа, `/skills-refine` текущей/прошлой переписки. Проверены scope/idle/race, redaction, цитаты с кавычками и переносами строк, усечение контекста, restart/dedup, прерывания, retries и отдельный opt-in auto-create. SDK scheduler проверен с настоящим таймером и тестовым SDK-контекстом; живая LLM-проверка истории и анализа выполнена в пользовательском OpenCode.
+
+Прогон 0.2.0: 94 unit/integration/security/contract/recovery/e2e tests, отдельный Bun SQLite smoke test и настоящий OpenTUI headless smoke test. Сборка и проверка exports извлечённого npm tarball прошли.
+
+Версия 0.2.1 добавляет `settings.set_publication_mode` и TUI `/skills-publication`, также доступный через меню настроек. Проверены атомарное переключение create/patch, реальная цепочка auto-create → auto-update → manual-pending в ядре, отсутствие ретроактивного применения, scope/roles, optimistic revision, idempotency, dry-run без записей и наследование настроек. Итог: 102 теста прошли; build, Bun SQLite и OpenTUI также прошли.
 
 ## Ограничения SDK и среды
 
@@ -31,7 +35,7 @@
 | Archive heuristics  | Положительные usage observations + сроки. Unknown/нулевая наблюдаемость оставляет навык активным. Semantic obsolete/duplicate анализ зависит от выбранной модели и владельца                                                                                                                                 |
 | Merge scripts       | Полное дерево сохранено; скрипты с предположением о root cwd требуют ручной проверки. Скрипты не запускаются автоматически                                                                                                                                                                                   |
 | Scope настройки     | Workspace наследует tenant и global patches поверх defaults; global patch требует отдельного server-bound global_admin. Revision относится к выбранному слою, inherited_revisions показывает родительские версии                                                                                             |
-| Извлечение истории  | Есть lifecycle backlog, test-tool evidence и явный importer/backfill. Полный сырой архив всех OpenCode tool outputs не предполагается доступным через session.context                                                                                                                                        |
+| Извлечение истории  | Conversation review читает доступное SDK-представление сообщений/инструментов; большой снимок явно сокращается. После compaction исходные сообщения могут отсутствовать. Есть явный importer/backfill и прежний режим test-tool evidence; скрытого обхода старого архива нет                                 |
 | Rate limits         | Есть лимиты jobs/context/budget/backlog; отдельный distributed HTTP request rate limiter должен задаваться на reverse proxy                                                                                                                                                                                  |
 | PII                 | Эвристическая фильтрация известных форматов; не является доказательством отсутствия любого секрета или персонального признака                                                                                                                                                                                |
 | FS integrity        | Файлы fsync, directory replacement и journal recovery проверены на локальной Linux FS; power loss/network FS и враждебный процесс с теми же правами ОС не моделировались                                                                                                                                     |

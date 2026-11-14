@@ -21,18 +21,21 @@ flowchart TB
 
 ## Модули
 
-| Файл                       | Ответственность                                                                             |
-| -------------------------- | ------------------------------------------------------------------------------------------- |
-| `server.ts`                | Реальная регистрация Plugin.define, RPC, skill transform/reload, capture и scheduler        |
-| `core.ts`                  | Авторизованный dispatch 74 методов, идемпотентность, материализация LLM-контекста           |
-| `catalog.ts`               | Каталог, revisions, версии, proposals, merge/split, публикация и recovery                   |
-| `packages.ts`              | Allowlist путей, links, YAML, binary encoding, staged filesystem replacement                |
-| `store.ts` / `database.ts` | SQLite, миграция v1, Node/Bun drivers, IMMEDIATE transactions, process lock, durable events |
-| `jobs.ts`                  | Зафиксированный executor, конкурентность, бюджет, timeout, lease и reconciliation           |
-| `learning.ts`              | Provenance, очистка, dedupe, evidence validation, deterministic findings                    |
-| `settings.ts`              | Строгая схема настроек, deep patch, optimistic locking                                      |
-| `rpc.ts`                   | Публичные Standard Schema/Zod-контракты и типы клиента                                      |
-| `tui.tsx`                  | Solid/OpenTUI route и диалоги поверх RPC                                                    |
+| Файл                        | Ответственность                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------- |
+| `server.ts`                 | Реальная регистрация Plugin.define, RPC, skill transform/reload, capture и scheduler        |
+| `core.ts`                   | Авторизованный dispatch 77 методов, идемпотентность, материализация LLM-контекста           |
+| `catalog.ts`                | Каталог, revisions, версии, proposals, merge/split, публикация и recovery                   |
+| `packages.ts`               | Allowlist путей, links, YAML, binary encoding, staged filesystem replacement                |
+| `store.ts` / `database.ts`  | SQLite, миграция v1, Node/Bun drivers, IMMEDIATE transactions, process lock, durable events |
+| `jobs.ts`                   | Зафиксированный executor, конкурентность, бюджет, timeout, lease и reconciliation           |
+| `learning.ts`               | Provenance, очистка, dedupe, evidence validation, deterministic findings                    |
+| `refine.ts`                 | Неизменяемые снимки переписки, контекст каталога, кандидаты создания/обновления             |
+| `conversation-review.ts`    | Долговременный счётчик действий, завершение ответа, дедупликация и задержки автозапуска     |
+| `opencode-conversations.ts` | Чтение истории SDK с проверками проекта, состояния idle и гонок при захвате                 |
+| `settings.ts`               | Строгая схема настроек, deep patch, optimistic locking                                      |
+| `rpc.ts`                    | Публичные Standard Schema/Zod-контракты и типы клиента                                      |
+| `tui.tsx`                   | Solid/OpenTUI route и диалоги поверх RPC                                                    |
 
 ## Хранение
 
@@ -75,6 +78,10 @@ erDiagram
 
 ## История
 
-Lifecycle listener пишет только durable backlog marker, чтение контекста выполняется scheduler. Внутренние session IDs регистрируются до create/prompt. Сам факт `execution.succeeded` не доказывает успешное бизнес-решение: такой архив остаётся unverified. Импорт с проверенной provenance и подтверждённое инструментальное evidence позволяют Learner создавать кандидатов. Каждый кандидат проверяется на реальные source_refs и буквальное присутствие evidence. LLM-ответ не может одобрить собственное предложение.
+В режиме conversation review hook считает все завершённые вызовы инструментов отдельно для каждой переписки. Listener сохраняет границу успешного ответа; started/failed/interrupted сбрасывают её. Scheduler проверяет порог действий, задержки, quiet hours, pause и native idle перед постановкой задания. Счётчик и ограниченное окно дедупликации последних 512 событий находятся в `control`; retry с неизвестным исходом сохраняет ключ, подтверждённый отказ до принятия позволяет новую попытку с задержкой. История до установки автоматически не обходится.
+
+`learning.refine` читает текущий SDK-контекст, очищает и ограничивает его размер, фиксирует immutable snapshot ID, revisions и hashes доступных целей. Сам текст остаётся в `sessions` с `verified:false`; job хранит идентификаторы. Модель получает снимок и каталог, возвращает кандидаты с именем нового навыка либо `target_skill_id` существующего. При обновлении добавляется раздел Refinement с процедурой, условиями, ошибками и цитатами; остальные файлы пакета сохраняются. Принятие результата проверяет цитаты и разрешённые цели повторно. `truncated` и `catalog_omitted` обозначают неполный контекст. Конфликт каталога останавливает обработку.
+
+Отдельный `learning.run` сохраняет прежние требования: только verified-источники и буквальное evidence. При выключенном conversation review доступен прежний сбор test-tool фрагментов и backlog истории. Внутренние session IDs регистрируются до create/prompt. Ни один LLM-ответ не может одобрить собственное предложение; автоматическое одобрение выполняет только настроенная серверная policy.
 
 Официальные источники совместимости: [server API](https://opencode.ai/docs/build/plugins/server/), [TUI API](https://opencode.ai/docs/build/plugins/cli/), [RPC API](https://opencode.ai/docs/build/plugins/rpc/), [package parts](https://opencode.ai/docs/build/plugins/). Проверены 14 ноября 2026; пакет закреплён на 2.3.0.

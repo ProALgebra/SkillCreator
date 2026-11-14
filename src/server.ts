@@ -9,8 +9,10 @@ import { SkillCurator, methodNames, type RpcInput } from './rpc.js';
 import { hash } from './security.js';
 import { now } from './types.js';
 import type { Principal, Scope, Skill } from './types.js';
-import type { Executor } from './jobs.js';
+import { ExecutorPreflightError, type Executor, type Job } from './jobs.js';
 import { resolveLocalToken } from './auth.js';
+import { openCodeConversations } from './opencode-conversations.js';
+import { ConversationReview } from './conversation-review.js';
 export { CuratorCore } from './core.js';
 export { CuratorError } from './errors.js';
 export type { Principal, Scope, Skill, Proposal, Settings } from './types.js';
@@ -93,8 +95,19 @@ export default Plugin.define({
       'Set SKILL_CURATOR_TOKEN (24+ characters) before loading the plugin',
     );
     let core: CuratorCore;
+    const conversations = openCodeConversations(ctx.session, ctx.location.directory, scope, (id) =>
+      Boolean(core?.store.get('control', 'internal:' + id)),
+    );
+    const modelPayload = (job: Job) => {
+      try {
+        return core.modelPayload(job);
+      } catch (error) {
+        if (error instanceof CuratorError) throw new ExecutorPreflightError(error);
+        throw error;
+      }
+    };
     const direct: Executor = async ({ job, signal }) => {
-      const context = core.modelPayload(job);
+      const context = modelPayload(job);
       const result = await ctx.experimental.generate.text(
         {
           prompt: JSON.stringify(context),
@@ -113,6 +126,7 @@ export default Plugin.define({
       return { output: parseModelJson(result.text), cost_usd: job.max_cost_usd };
     };
     const session: Executor = async ({ job, signal }) => {
+      const context = modelPayload(job);
       // Register the chosen ID before create/prompt so event capture cannot recursively ingest it.
       const sessionID = 'ses_curator_' + job.job_id.replaceAll('-', '') + '_' + job.attempt;
       core.store.put('control', 'internal:' + sessionID, {
@@ -150,7 +164,7 @@ export default Plugin.define({
         await ctx.session.prompt(
           {
             sessionID: created.id,
-            text: JSON.stringify(core.modelPayload(job)),
+            text: JSON.stringify(context),
             metadata: { skill_curator_internal: true },
           },
           { signal },
@@ -177,6 +191,7 @@ export default Plugin.define({
       dataDirectory: root,
       skillDirectory: options.skill_directory,
       executors: { direct, session },
+      conversations,
       reload: () => ctx.skill.reload(),
       discover: async () => {
         const listed = await ctx.skill.list();
@@ -243,9 +258,16 @@ export default Plugin.define({
     // SDK 2.3 does not expose caller identity or filtered event subscriptions. Do not broadcast tenant data.
     // Authenticated events.replay is the authoritative event transport for external clients.
     const controller = new AbortController();
+    const conversationReview = new ConversationReview(core.store, scope);
     const toolCapture = await ctx.tool.hook('execute.after', (event) => {
-      if (core.store.get('control', 'internal:' + event.sessionID) || event.status !== 'completed')
+      if (
+        event.sessionID.startsWith('ses_curator_') ||
+        core.store.get('control', 'internal:' + event.sessionID)
+      )
         return;
+      conversationReview.activity(event.sessionID, String(event.id));
+      if (core.settings.get(scope).settings.conversation_review.enabled) return;
+      if (event.status !== 'completed') return;
       const input = event.input as { command?: unknown; cmd?: unknown } | null;
       const command =
         typeof input?.command === 'string'
@@ -270,18 +292,38 @@ export default Plugin.define({
     });
     const capture = async () => {
       for await (const event of ctx.event.subscribe({
-        types: ['session.execution.succeeded', 'session.skill.activated'],
+        types: [
+          'session.execution.started',
+          'session.execution.succeeded',
+          'session.execution.failed',
+          'session.execution.interrupted',
+          'session.skill.activated',
+        ],
         signal: controller.signal,
       })) {
         if (event.location?.directory !== ctx.location.directory) continue;
         const sessionID = event.data.sessionID;
-        if (core.store.get('control', 'internal:' + sessionID)) continue;
+        if (
+          sessionID.startsWith('ses_curator_') ||
+          core.store.get('control', 'internal:' + sessionID)
+        )
+          continue;
         if (event.type === 'session.skill.activated') {
           const skill = core.catalog.list(scope).find((s) => s.name === event.data.name);
           if (skill)
             core.catalog.recordUsage(scope, 'opencode', skill.skill_id, 'session.skill.activated');
           continue;
         }
+        if (event.type === 'session.execution.started') {
+          conversationReview.sessionStarted(sessionID, String(event.id));
+          continue;
+        }
+        if (event.type !== 'session.execution.succeeded') {
+          conversationReview.interrupted(sessionID, String(event.id));
+          continue;
+        }
+        conversationReview.completed(sessionID, String(event.id));
+        if (core.settings.get(scope).settings.conversation_review.enabled) continue;
         // Durable backlog marker only: heavy history reads happen on the scheduled tick.
         const key = 'capture:' + hash([scope, sessionID, event.id]);
         core.store.put('control', key, {
@@ -326,6 +368,7 @@ export default Plugin.define({
               !r.processed,
           );
         for (const item of backlog.slice(0, 10)) {
+          if (settings.conversation_review.enabled) break;
           if (
             Date.now() - Date.parse(item.created_at) <
             Math.max(settings.auto_learning.min_age_sec, settings.auto_learning.debounce_sec) * 1000
@@ -347,8 +390,33 @@ export default Plugin.define({
             });
           }
         }
-        // Completion alone does not prove success. Unverified captured history stays available for explicit evidence import.
+        await conversationReview.drain({
+          settings,
+          paused: Boolean(paused?.learning),
+          readState: (sessionID) => conversations.state(sessionID),
+          run: async (sessionID, idempotencyKey) => {
+            const configured = settings.conversation_review;
+            return (await core.call(
+              'learning.refine',
+              {
+                session_ids: [sessionID],
+                idempotency_key: idempotencyKey,
+                execution:
+                  configured.provider && configured.model
+                    ? {
+                        provider: configured.provider,
+                        model: configured.model,
+                        ...(configured.variant ? { variant: configured.variant } : {}),
+                      }
+                    : undefined,
+              },
+              local,
+            )) as { job_id: string };
+          },
+        });
+        // The old verified-fragment trigger remains available when conversation review is disabled.
         if (
+          !settings.conversation_review.enabled &&
           settings.auto_learning.enabled &&
           !paused?.learning &&
           settings.auto_learning.on_session_end &&

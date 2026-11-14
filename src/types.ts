@@ -87,6 +87,15 @@ export interface Execution {
 }
 export interface Settings {
   enabled: boolean;
+  conversation_review: {
+    enabled: boolean;
+    every_n_actions: number;
+    min_age_sec: number;
+    debounce_sec: number;
+    provider?: string;
+    model?: string;
+    variant?: string;
+  };
   auto_learning: {
     enabled: boolean;
     on_session_end: boolean;
@@ -118,6 +127,7 @@ export interface Settings {
   };
   approval: {
     mode: 'manual' | 'safe' | 'auto';
+    allow_auto_create: boolean;
     allow_auto_patch_managed_low_risk: boolean;
     allow_auto_archive_managed: boolean;
     protect_manual_skills: boolean;

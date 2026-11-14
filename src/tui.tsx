@@ -1,7 +1,7 @@
 import { Plugin } from '@opencode/plugin/tui';
 import { For, Show, createResource, createSignal, onCleanup } from 'solid-js';
 import { SkillCurator, type MethodName, type RpcInput } from './rpc.js';
-import type { Skill, Proposal } from './types.js';
+import type { Skill, Proposal, Settings } from './types.js';
 import type { Job } from './jobs.js';
 import { resolveLocalToken } from './auth.js';
 
@@ -79,7 +79,109 @@ export default Plugin.define({
       const mode = await chooseMode();
       if (mode) await mutate('learning.run', { execution: execution(mode) });
     };
-    const editSettings = async () => {
+    const refine = async () => {
+      const route = context.ui.router.current();
+      let sessionID: string | undefined;
+      if (route.type === 'session') {
+        const source = await context.ui.dialog.select({
+          title: 'Разобрать переписку',
+          options: [
+            { title: 'Текущая переписка', value: 'current' },
+            { title: 'Выбрать из истории', value: 'history' },
+          ],
+        });
+        if (!source) return;
+        if (source === 'current') sessionID = route.sessionID;
+      }
+      if (!sessionID) {
+        const sessions = (await call('learning.sessions', { limit: 100 })) as {
+          items: Array<{ session_id: string; title: string }>;
+        };
+        if (sessions.items.length === 0) {
+          await alert('Разобрать переписку', 'В этом проекте нет доступных переписок.');
+          return;
+        }
+        sessionID = await context.ui.dialog.select({
+          title: 'Переписка для разбора',
+          options: sessions.items.map((session) => ({
+            title: session.title || session.session_id,
+            value: session.session_id,
+          })),
+        });
+        if (!sessionID) return;
+      }
+      const focus = await context.ui.dialog.prompt({
+        title: 'Что извлечь из переписки?',
+        description:
+          'Можно оставить пустым. Сообщения проверяются как источники, а не как инструкции. По умолчанию изменения навыков требуют одобрения.',
+        value: '',
+      });
+      if (focus === undefined) return;
+      const mode = await chooseMode();
+      if (!mode) return;
+      await mutate('learning.refine', {
+        session_ids: [sessionID],
+        ...(focus.trim() ? { reason: focus.trim() } : {}),
+        execution: execution(mode),
+      });
+      context.ui.toast.show({
+        message: 'Разбор переписки запущен. Результаты появятся в предложениях навыков.',
+        variant: 'success',
+      });
+    };
+    const publication = async () => {
+      const current = (await call('settings.get')) as {
+        revision: number;
+        settings: Settings;
+      };
+      const approval = current.settings.approval;
+      const automatic =
+        approval.mode === 'auto' &&
+        approval.allow_auto_create &&
+        approval.allow_auto_patch_managed_low_risk;
+      const selective =
+        approval.mode === 'auto' &&
+        (approval.allow_auto_create ||
+          approval.allow_auto_patch_managed_low_risk ||
+          approval.allow_auto_archive_managed);
+      const mode = await context.ui.dialog.select({
+        title:
+          'Публикация навыков · ' +
+          (automatic ? 'автоматическая' : selective ? 'выборочная' : 'ручная'),
+        options: [
+          {
+            title: 'Вручную',
+            value: 'manual',
+            description: 'Одобрять предложения перед публикацией навыков.',
+          },
+          {
+            title: 'Автоматически',
+            value: 'auto',
+            description:
+              'Новые результаты: создание навыков и безопасные обновления управляемых навыков без одобрения.',
+          },
+        ],
+      });
+      if (!mode) return;
+      const enabled = mode === 'auto';
+      if (
+        approval.mode === mode &&
+        approval.allow_auto_create === enabled &&
+        approval.allow_auto_patch_managed_low_risk === enabled
+      )
+        return;
+      await mutate('settings.set_publication_mode', {
+        publication_mode: mode as 'manual' | 'auto',
+        expected_revision: current.revision,
+      });
+      context.ui.toast.show({
+        message: enabled
+          ? 'Автоматическая публикация следующих результатов включена: новые навыки и безопасные обновления.'
+          : 'Включена ручная публикация: предложения требуют одобрения.',
+        variant: 'success',
+      });
+    };
+    const editSettingsJson = async () => {
       const current = (await call('settings.get')) as {
         revision: number;
         settings: Record<string, unknown>;
@@ -87,13 +189,29 @@ export default Plugin.define({
       const patch = await context.ui.dialog.prompt({
         title: 'Настройки — JSON patch',
         value: '{}',
-        description: 'execution, limits, approval, privacy, curator, auto_learning',
+        description:
+          'conversation_review, execution, limits, approval, privacy, curator, auto_learning',
       });
       if (patch)
         await mutate('settings.patch', {
           expected_revision: current.revision,
           patch: JSON.parse(patch),
         });
+    };
+    const editSettings = async () => {
+      const action = await context.ui.dialog.select({
+        title: 'Настройки навыков',
+        options: [
+          {
+            title: 'Публикация навыков',
+            value: 'publication',
+            description: 'Ручное одобрение или автоматическая публикация.',
+          },
+          { title: 'JSON patch', value: 'json' },
+        ],
+      });
+      if (action === 'publication') await publication();
+      else if (action === 'json') await editSettingsJson();
     };
     const jobs = async () => {
       const list = (await call('jobs.list', { limit: 200 })) as { items: Job[] };
@@ -495,12 +613,28 @@ export default Plugin.define({
           run: () => run(learn),
         },
         {
+          id: 'skill-curator.refine',
+          title: 'Refine conversation into skills',
+          group: 'Skills',
+          palette: true,
+          slash: { name: 'skills-refine' },
+          run: () => run(refine),
+        },
+        {
           id: 'skill-curator.jobs',
           title: 'Skill jobs',
           group: 'Skills',
           palette: true,
           slash: { name: 'skills-jobs' },
           run: () => run(jobs),
+        },
+        {
+          id: 'skill-curator.publication',
+          title: 'Skill publication mode',
+          group: 'Skills',
+          palette: true,
+          slash: { name: 'skills-publication' },
+          run: () => run(publication),
         },
         {
           id: 'skill-curator.settings',

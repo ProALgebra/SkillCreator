@@ -37,7 +37,7 @@ test('viewer and worker cannot approve, publish, or patch settings', async (t) =
       );
 });
 test('all specified RPC methods are registered; schema rejects unknown fields', () => {
-  assert.equal(methodNames.length, 74);
+  assert.equal(methodNames.length, 77);
   for (const name of methodNames) assert.ok(SkillCurator.methods[name]);
   assert.equal(inputSchema.safeParse({ arbitrary_shell: 'rm' }).success, false);
   assert.equal(settingsSchema.safeParse(defaults).success, true);

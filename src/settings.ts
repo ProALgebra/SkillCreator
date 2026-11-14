@@ -7,6 +7,18 @@ const mode = z.enum(['direct', 'session', 'valeria', 'external', 'auto']);
 export const settingsSchema = z
   .object({
     enabled: z.boolean(),
+    conversation_review: z
+      .object({
+        enabled: z.boolean(),
+        every_n_actions: positive,
+        min_age_sec: z.number().nonnegative(),
+        debounce_sec: z.number().nonnegative(),
+        provider: z.string().min(1).max(240).optional(),
+        model: z.string().min(1).max(240).optional(),
+        variant: z.string().min(1).max(240).optional(),
+      })
+      .strict()
+      .refine((v) => Boolean(v.provider) === Boolean(v.model), 'Set provider and model together'),
     auto_learning: z
       .object({
         enabled: z.boolean(),
@@ -47,6 +59,7 @@ export const settingsSchema = z
     approval: z
       .object({
         mode: z.enum(['manual', 'safe', 'auto']),
+        allow_auto_create: z.boolean(),
         allow_auto_patch_managed_low_risk: z.boolean(),
         allow_auto_archive_managed: z.boolean(),
         protect_manual_skills: z.literal(true),
@@ -78,6 +91,12 @@ export const settingsSchema = z
   );
 export const defaults: Settings = {
   enabled: true,
+  conversation_review: {
+    enabled: true,
+    every_n_actions: 10,
+    min_age_sec: 30,
+    debounce_sec: 5,
+  },
   auto_learning: {
     enabled: true,
     on_session_end: true,
@@ -109,6 +128,7 @@ export const defaults: Settings = {
   },
   approval: {
     mode: 'manual',
+    allow_auto_create: false,
     allow_auto_patch_managed_low_risk: false,
     allow_auto_archive_managed: false,
     protect_manual_skills: true,
