@@ -173,6 +173,7 @@ export const inputSchema = z
     result: z.unknown().optional(),
     error: z.string().max(4000).optional(),
     cost_usd: z.number().nonnegative().optional(),
+    cost_known: z.boolean().optional(),
   })
   .strict();
 export type RpcInput = z.infer<typeof inputSchema>;

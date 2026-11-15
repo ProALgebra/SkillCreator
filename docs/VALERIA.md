@@ -43,6 +43,8 @@ Persist the `job_id → VALERIA task ID` mapping in a durable bridge registry **
 
 After lease expiry, a job becomes `unknown_outcome` and cannot be reassigned. The original worker can reconcile a known outcome using its original capability. An expired lease cannot be extended by heartbeat; a new LLM run is never created automatically. For a canceled job, acknowledgment completes cancellation without publishing the result.
 
-`context.sessions` is empty when `privacy.send_raw_transcripts_to_external` is disabled; this is the expected disclosure limit. To enable external learning, an administrator must explicitly permit sending redacted history. Skill package contents for review are shared only with the assigned executor within the authorized scope.
+External learning is rejected before lease acceptance when `privacy.send_raw_transcripts_to_external` is disabled. To enable external learning, an administrator must explicitly permit sending redacted history. Skill package contents for review are shared only with the assigned executor within the authorized scope.
+
+With an unlimited job cap (`job.max_cost_usd:null`), a worker may omit unknown `cost_usd` or return a known subtotal with `cost_known:false`. The resulting job exposes incomplete accounting rather than a zero provider bill. A finite job cap still requires a complete nonnegative cost report. Default cost limits are disabled; the 45,000-token context budget and lease/concurrency checks remain active.
 
 The VALERIA dashboard can use `manager.snapshot` directly and poll events through `events.replay`. VALERIA's own UI and deployment require its separate project environment; the server contract is ready for that integration.

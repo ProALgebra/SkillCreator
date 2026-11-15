@@ -140,7 +140,12 @@ export interface Settings {
     allow_auto_archive_managed: boolean;
     protect_manual_skills: boolean;
   };
-  limits: { daily_cost_usd: number; max_job_cost_usd: number; max_context_tokens: number };
+  limits: {
+    /** null disables the corresponding configured limit. */
+    daily_cost_usd: number | null;
+    max_job_cost_usd: number | null;
+    max_context_tokens: number;
+  };
   privacy: {
     redact_secrets: boolean;
     send_raw_transcripts_to_external: boolean;

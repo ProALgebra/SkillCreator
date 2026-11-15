@@ -30,7 +30,9 @@ export interface Job extends Scope {
   updated_at: string;
   progress: number;
   cost: number;
-  max_cost_usd: number;
+  /** False when cost only contains the known portion of provider charges. */
+  cost_known?: boolean;
+  max_cost_usd: number | null;
   proposal_ids: string[];
   source_refs: string[];
   error?: { code: string; message: string };
@@ -44,6 +46,7 @@ interface Attempt extends Scope {
   started_at: string;
   ended_at?: string;
   cost: number;
+  cost_known?: boolean;
   reserved: number;
   day: string;
 }
@@ -62,10 +65,12 @@ export interface PreparedLease<C> {
   expires_at: string;
   context: C;
 }
-export type Executor = (input: {
-  job: Job;
-  signal: AbortSignal;
-}) => Promise<{ output: unknown; cost_usd?: number }>;
+export interface ExecutorResult {
+  output: unknown;
+  cost_usd?: number;
+  cost_known?: boolean;
+}
+export type Executor = (input: { job: Job; signal: AbortSignal }) => Promise<ExecutorResult>;
 
 /** An executor explicitly confirms that validation failed before any provider work began. */
 export class ExecutorPreflightError extends CuratorError {
@@ -138,25 +143,55 @@ export class JobService {
   }
   remainingBudget(scope: Scope, excludeJobID?: string): number {
     const s = this.settings(scope);
+    if (s.limits.daily_cost_usd === null) return Infinity;
     const today = now().slice(0, 10);
-    const used = this.store
+    const attempts = this.store
       .all<Attempt>('job_attempts')
-      .filter((a) => a.tenant_id === scope.tenant_id && a.day === today)
-      .reduce((sum, a) => sum + a.cost + a.reserved, 0);
-    const queued = this.store
+      .filter((a) => a.tenant_id === scope.tenant_id && a.day === today);
+    // An unknown unbounded charge cannot become free work when a daily cap is enabled later.
+    if (attempts.some((a) => a.cost_known === false && a.reserved === 0)) return -Infinity;
+    const used = attempts.reduce((sum, a) => sum + a.cost + a.reserved, 0);
+    const queuedJobs = this.store
       .all<Job>('jobs')
       .filter(
         (j) =>
           j.tenant_id === scope.tenant_id &&
           j.job_id !== excludeJobID &&
           ['queued', 'waiting_executor'].includes(j.status),
-      )
-      .reduce((sum, j) => sum + Math.max(0, j.max_cost_usd - j.cost), 0);
+      );
+    if (queuedJobs.some((j) => j.max_cost_usd === null)) return -Infinity;
+    const queued = queuedJobs.reduce((sum, j) => sum + Math.max(0, j.max_cost_usd! - j.cost), 0);
     return s.limits.daily_cost_usd - used - queued;
   }
-  private budget(scope: Scope, cap: number, excludeJobID?: string) {
+  /** Unsettled liabilities only; callers add known job costs and any prospective reservation. */
+  reservedCost(scope: Scope, jobIDs: string[], excludeAttemptID?: string): number {
+    const selected = new Set(jobIDs);
+    let reserved = 0;
+    for (const attempt of this.store.all<Attempt>('job_attempts')) {
+      if (
+        !sameScope(attempt, scope) ||
+        !selected.has(attempt.job_id) ||
+        attempt.id === excludeAttemptID
+      )
+        continue;
+      if (
+        !Number.isFinite(attempt.reserved) ||
+        attempt.reserved < 0 ||
+        (attempt.cost_known === false && attempt.reserved === 0)
+      )
+        return Infinity;
+      reserved += attempt.reserved;
+      if (!Number.isFinite(reserved)) return Infinity;
+    }
+    return reserved;
+  }
+  private remainingCap(j: Job): number | null {
+    return j.max_cost_usd === null ? null : Math.max(0, j.max_cost_usd - j.cost);
+  }
+  private budget(scope: Scope, cap: number | null, excludeJobID?: string) {
+    const remaining = this.remainingBudget(scope, excludeJobID);
     ensure(
-      cap <= this.remainingBudget(scope, excludeJobID) + 1e-9,
+      cap === null ? remaining === Infinity : cap <= remaining + 1e-9,
       'budget_exceeded',
       'Daily tenant budget is exhausted',
     );
@@ -174,7 +209,10 @@ export class JobService {
     const mode = this.resolve(scope, operation, execution);
     const cap = execution.max_cost_usd ?? s.limits.max_job_cost_usd;
     ensure(
-      Number.isFinite(cap) && cap >= 0 && cap <= s.limits.max_job_cost_usd,
+      cap === null ||
+        (Number.isFinite(cap) &&
+          cap >= 0 &&
+          (s.limits.max_job_cost_usd === null || cap <= s.limits.max_job_cost_usd)),
       'budget_exceeded',
       'Job budget exceeds the configured limit',
     );
@@ -209,6 +247,7 @@ export class JobService {
       updated_at: now(),
       progress: 0,
       cost: 0,
+      cost_known: true,
       max_cost_usd: cap,
       proposal_ids: [],
       source_refs: Array.isArray(payload.source_refs) ? (payload.source_refs as string[]) : [],
@@ -265,10 +304,11 @@ export class JobService {
     ensure(this.capacity(j), 'rate_limited', 'Concurrency limit reached');
     const s = this.settings(j);
     ensure(s.enabled && !this.stopped, 'executor_unavailable', 'Background work is paused');
-    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
+    this.budget(j, this.remainingCap(j), j.job_id);
     j.attempt++;
     j.attempt_id = randomUUID();
     j.status = 'running';
+    j.cost_known = false;
     this.store.put('job_attempts', j.attempt_id, {
       ...{ tenant_id: j.tenant_id, workspace_id: j.workspace_id },
       id: j.attempt_id,
@@ -276,7 +316,8 @@ export class JobService {
       status: 'running',
       started_at: now(),
       cost: 0,
-      reserved: j.max_cost_usd - j.cost,
+      cost_known: false,
+      reserved: this.remainingCap(j) ?? 0,
       day: now().slice(0, 10),
     } satisfies Attempt);
     this.save(j);
@@ -289,20 +330,20 @@ export class JobService {
       j.correlation_id,
     );
   }
-  private settle(j: Job, cost: number, known: boolean): void {
+  private settle(j: Job, cost: number, settled: boolean, costKnown = settled): void {
     if (!j.attempt_id) return;
     const a = this.store.get<Attempt>('job_attempts', j.attempt_id)!;
     a.status = j.status;
-    if (known) {
+    a.cost_known = costKnown;
+    if (settled) {
       a.cost = cost;
       a.reserved = 0;
       a.ended_at = now();
     }
     this.store.put('job_attempts', a.id, a);
-    j.cost = this.store
-      .all<Attempt>('job_attempts')
-      .filter((a) => a.job_id === j.job_id)
-      .reduce((s, a) => s + a.cost, 0);
+    const attempts = this.store.all<Attempt>('job_attempts').filter((a) => a.job_id === j.job_id);
+    j.cost = attempts.reduce((s, a) => s + a.cost, 0);
+    j.cost_known = attempts.every((a) => a.cost_known !== false);
   }
   private unknown(j: Job, reason: string): void {
     j.status = 'unknown_outcome';
@@ -350,7 +391,7 @@ export class JobService {
   resume(scope: Scope, id: string): Job {
     const j = this.get(scope, id);
     ensure(j.status === 'interrupted', 'validation_error', 'Job is not paused');
-    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
+    this.budget(j, this.remainingCap(j), j.job_id);
     j.status = ['valeria', 'external'].includes(j.executor_mode) ? 'waiting_executor' : 'queued';
     return this.save(j);
   }
@@ -374,8 +415,12 @@ export class JobService {
     const j = this.get(scope, id);
     ensure(j.status === 'failed', 'unknown_outcome', 'Only a definitely failed job can be retried');
     ensure(!this.active.has(id), 'rate_limited', 'Executor is still stopping');
-    ensure(j.cost < j.max_cost_usd, 'budget_exceeded', 'No budget remains');
-    this.budget(j, j.max_cost_usd - j.cost, j.job_id);
+    ensure(
+      j.max_cost_usd === null || j.cost < j.max_cost_usd,
+      'budget_exceeded',
+      'No budget remains',
+    );
+    this.budget(j, this.remainingCap(j), j.job_id);
     j.status = ['valeria', 'external'].includes(j.executor_mode) ? 'waiting_executor' : 'queued';
     delete j.error;
     this.store.delete('control', 'receipt:' + id);
@@ -540,7 +585,7 @@ export class JobService {
     id: string,
     worker: string,
     token: string,
-    result: { output: unknown; cost_usd?: number },
+    result: ExecutorResult,
   ): Promise<Job> {
     const previous = this.store.get<{ worker: string; token_hash: string; result_hash: string }>(
       'control',
@@ -573,36 +618,45 @@ export class JobService {
     });
     return completed;
   }
-  fail(scope: Scope, id: string, worker: string, token: string, error: string, cost = 0): Job {
+  fail(scope: Scope, id: string, worker: string, token: string, error: string, cost?: number): Job {
     const { job: j } = this.authorizeLease(scope, id, worker, token);
     ensure(
       j.status === 'running' || j.status === 'unknown_outcome',
       'validation_error',
       'Job already ended',
     );
-    ensure(Number.isFinite(cost) && cost >= 0, 'validation_error', 'Invalid cost');
+    ensure(
+      cost === undefined || (Number.isFinite(cost) && cost >= 0),
+      'validation_error',
+      'Invalid cost',
+    );
+    const settledCost = cost ?? this.remainingCap(j) ?? 0;
+    const costKnown = cost !== undefined || j.max_cost_usd !== null;
     j.status = 'failed';
     j.error = { code: 'internal_error', message: redact(error) };
     this.store.transaction(() => {
-      this.settle(j, cost, true);
+      this.settle(j, settledCost, true, costKnown);
       this.save(j);
       this.store.delete('job_leases', id);
       this.store.emit('job.failed', scope, worker, id);
     });
     return j;
   }
-  private async finish(j: Job, result: { output: unknown; cost_usd?: number }): Promise<Job> {
-    const cost = result.cost_usd;
+  private async finish(j: Job, result: ExecutorResult): Promise<Job> {
+    const costKnown = result.cost_usd !== undefined && result.cost_known !== false;
     ensure(
-      cost !== undefined && Number.isFinite(cost) && cost >= 0,
+      (result.cost_usd === undefined ||
+        (Number.isFinite(result.cost_usd) && result.cost_usd >= 0)) &&
+        (j.max_cost_usd === null || costKnown),
       'validation_error',
       'Executor must report a nonnegative cost',
     );
+    const cost = result.cost_usd ?? 0;
     const latest = this.get(j, j.job_id);
     if (latest.status === 'unknown_outcome' && latest.cancel_requested) {
       latest.status = 'cancelled';
       this.store.transaction(() => {
-        this.settle(latest, cost, true);
+        this.settle(latest, cost, true, costKnown);
         this.save(latest);
         this.store.delete('job_leases', latest.job_id);
         this.store.emit('job.cancelled', latest, latest.requested_by, latest.job_id);
@@ -615,11 +669,11 @@ export class JobService {
       this.save(latest);
       j = latest;
     }
-    if (j.cost + cost > j.max_cost_usd) {
+    if (j.max_cost_usd !== null && j.cost + cost > j.max_cost_usd) {
       j.status = 'failed';
       j.error = { code: 'budget_exceeded', message: 'Reported job cost exceeds its budget' };
       this.store.transaction(() => {
-        this.settle(j, cost, true);
+        this.settle(j, cost, true, costKnown);
         this.save(j);
         this.store.delete('job_leases', j.job_id);
         this.store.emit('job.failed', j, j.requested_by, j.job_id, { code: 'budget_exceeded' });
@@ -633,7 +687,7 @@ export class JobService {
       j.status = 'completed';
       j.progress = 1;
       this.store.transaction(() => {
-        this.settle(j, cost, true);
+        this.settle(j, cost, true, costKnown);
         this.save(j);
         this.store.delete('job_leases', j.job_id);
         this.store.emit(
@@ -641,7 +695,7 @@ export class JobService {
           j,
           j.requested_by,
           j.job_id,
-          { proposal_ids: ids, cost },
+          { proposal_ids: ids, cost, cost_known: costKnown },
           j.correlation_id,
         );
       });
@@ -652,7 +706,7 @@ export class JobService {
         message: error instanceof CuratorError ? error.message : 'Invalid executor result',
       };
       this.store.transaction(() => {
-        this.settle(j, cost, true);
+        this.settle(j, cost, true, costKnown);
         this.save(j);
         this.store.delete('job_leases', j.job_id);
         this.store.emit('job.failed', j, j.requested_by, j.job_id, { code: j.error!.code });
@@ -759,6 +813,7 @@ export class JobService {
       active: jobs.filter((j) => j.status === 'running').length,
       unknown: jobs.filter((j) => j.status === 'unknown_outcome').length,
       cost: jobs.reduce((s, j) => s + j.cost, 0),
+      cost_known: jobs.every((j) => j.cost_known !== false),
     };
   }
 }

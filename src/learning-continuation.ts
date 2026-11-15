@@ -12,7 +12,7 @@ export interface LearningContinuationPlan extends Scope {
   batches: LearningBatchPayload[];
   execution: Execution;
   external: boolean;
-  budget_total: number;
+  budget_total: number | null;
   max_calls: number;
   skipped: Skip[];
 }
@@ -26,7 +26,7 @@ interface Continuation extends Scope {
   batches: LearningBatchPayload[];
   execution: Execution;
   external: boolean;
-  budget_total: number;
+  budget_total: number | null;
   max_calls: number;
   skipped: Skip[];
   next_index: number;
@@ -88,7 +88,11 @@ export class LearningContinuationService {
     const settings = this.settings(currentScope);
     const budget = execution.max_cost_usd ?? settings.limits.max_job_cost_usd;
     ensure(
-      Number.isFinite(budget) && budget >= 0 && budget <= settings.limits.max_job_cost_usd,
+      budget === null ||
+        (Number.isFinite(budget) &&
+          budget >= 0 &&
+          (settings.limits.max_job_cost_usd === null ||
+            budget <= settings.limits.max_job_cost_usd)),
       'budget_exceeded',
       'Learning run budget exceeds the configured limit',
     );
@@ -130,7 +134,9 @@ export class LearningContinuationService {
       execution: {
         ...execution,
         mode,
-        max_cost_usd: batches.length ? budget / (batches.length + reserve) : 0,
+        ...(budget === null
+          ? {}
+          : { max_cost_usd: batches.length ? budget / (batches.length + reserve) : 0 }),
       },
       external,
       budget_total: budget,
@@ -152,10 +158,10 @@ export class LearningContinuationService {
       'No learning records fit the context budget',
     );
     ensure(
-      Number.isFinite(plan.budget_total) &&
-        plan.budget_total > 0 &&
-        Number.isFinite(plan.execution.max_cost_usd) &&
-        plan.execution.max_cost_usd! > 0,
+      (plan.budget_total === null ||
+        (Number.isFinite(plan.budget_total) && plan.budget_total > 0)) &&
+        ((plan.budget_total === null && plan.execution.max_cost_usd === undefined) ||
+          (Number.isFinite(plan.execution.max_cost_usd) && plan.execution.max_cost_usd! > 0)),
       'budget_exceeded',
       'Learning execution requires a positive run and per-call budget',
     );
@@ -214,6 +220,7 @@ export class LearningContinuationService {
     return {
       children,
       cost: children.reduce((sum, child) => sum + child.cost, 0),
+      cost_known: children.every((child) => child.cost_known !== false),
       calls: children.reduce((sum, child) => sum + child.attempt, 0),
     };
   }
@@ -221,16 +228,21 @@ export class LearningContinuationService {
   private queue(row: Continuation): Job {
     const usage = this.usage(row);
     ensure(usage.calls < row.max_calls, 'budget_exceeded', 'Learning run call limit is exhausted');
-    const reservation = row.execution.max_cost_usd ?? 0;
-    ensure(
-      Number.isFinite(reservation) &&
-        reservation > 0 &&
-        Number.isFinite(usage.cost) &&
-        usage.cost >= 0 &&
-        usage.cost + reservation <= row.budget_total + 1e-9,
-      'budget_exceeded',
-      'Learning run budget is exhausted',
-    );
+    if (row.budget_total !== null) {
+      const reservation = row.execution.max_cost_usd ?? 0;
+      const retained = this.jobs.reservedCost(row, row.job_ids);
+      ensure(
+        Number.isFinite(reservation) &&
+          reservation > 0 &&
+          Number.isFinite(usage.cost) &&
+          usage.cost >= 0 &&
+          Number.isFinite(retained) &&
+          retained >= 0 &&
+          usage.cost + retained + reservation <= row.budget_total + 1e-9,
+        'budget_exceeded',
+        'Learning run budget is exhausted',
+      );
+    }
     const payload = row.batches[row.next_index];
     ensure(payload, 'validation_error', 'Learning continuation batch is missing');
     const scope = scopeOf(row);
@@ -274,15 +286,24 @@ export class LearningContinuationService {
     const usage = this.usage(row);
     const calls = usage.calls + (job.status === 'running' ? 0 : 1);
     ensure(calls <= row.max_calls, 'budget_exceeded', 'Learning run call limit is exhausted');
-    const reservation = Math.max(0, job.max_cost_usd - job.cost);
+    if (row.budget_total === null) return;
+    const reservation = job.max_cost_usd === null ? null : Math.max(0, job.max_cost_usd - job.cost);
+    const retained = this.jobs.reservedCost(
+      row,
+      row.job_ids,
+      job.status === 'running' ? job.attempt_id : undefined,
+    );
     ensure(
       Number.isFinite(job.cost) &&
         job.cost >= 0 &&
+        reservation !== null &&
         Number.isFinite(reservation) &&
         reservation > 0 &&
         Number.isFinite(usage.cost) &&
         usage.cost >= 0 &&
-        usage.cost + reservation <= row.budget_total + 1e-9,
+        Number.isFinite(retained) &&
+        retained >= 0 &&
+        usage.cost + retained + reservation <= row.budget_total + 1e-9,
       'budget_exceeded',
       'Learning run budget is exhausted',
     );
@@ -378,6 +399,7 @@ export class LearningContinuationService {
         0,
       ),
       cost_usd: usage.cost,
+      cost_known: usage.cost_known,
       budget_total: row.budget_total,
       calls_used: usage.calls,
       max_calls: row.max_calls,

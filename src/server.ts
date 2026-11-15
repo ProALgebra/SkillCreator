@@ -159,7 +159,7 @@ export default Plugin.define({
       }
     };
     const direct: Executor = async ({ job, signal }) => {
-      if (job.max_cost_usd <= job.cost)
+      if (job.max_cost_usd !== null && job.max_cost_usd <= job.cost)
         throw new ExecutorPreflightError(
           new CuratorError('budget_exceeded', 'No provider budget remains'),
         );
@@ -178,11 +178,17 @@ export default Plugin.define({
         },
         { signal },
       );
-      // SDK 2.3 direct generation reports text only. Charge the complete reservation conservatively.
-      return { output: parseModelJson(result.text), cost_usd: job.max_cost_usd - job.cost };
+      // SDK 2.3 reports text only. Bounded jobs retain their conservative charge;
+      // unbounded jobs expose the missing accounting rather than inventing a price.
+      return {
+        output: parseModelJson(result.text),
+        ...(job.max_cost_usd === null
+          ? { cost_known: false }
+          : { cost_usd: job.max_cost_usd - job.cost, cost_known: true }),
+      };
     };
     const session: Executor = async ({ job, signal }) => {
-      if (job.max_cost_usd <= job.cost)
+      if (job.max_cost_usd !== null && job.max_cost_usd <= job.cost)
         throw new ExecutorPreflightError(
           new CuratorError('budget_exceeded', 'No provider budget remains'),
         );
@@ -238,10 +244,16 @@ export default Plugin.define({
           .filter((c) => c.type === 'text')
           .map((c) => c.text)
           .join('\n');
-        const cost = assistants.every((m) => m.cost !== undefined)
-          ? assistants.reduce((sum, m) => sum + (m.cost ?? 0), 0)
-          : job.max_cost_usd - job.cost;
-        return { output: parseModelJson(text), cost_usd: cost };
+        const known = assistants.every((m) => m.cost !== undefined);
+        const cost = assistants.reduce((sum, m) => sum + (m.cost ?? 0), 0);
+        return {
+          output: parseModelJson(text),
+          ...(known
+            ? { cost_usd: cost, cost_known: true }
+            : job.max_cost_usd === null
+              ? { ...(cost > 0 ? { cost_usd: cost } : {}), cost_known: false }
+              : { cost_usd: job.max_cost_usd - job.cost, cost_known: true }),
+        };
       } finally {
         signal.removeEventListener('abort', interrupt);
       }

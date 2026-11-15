@@ -81,8 +81,8 @@ export const settingsSchema = z
       .strict(),
     limits: z
       .object({
-        daily_cost_usd: z.number().nonnegative(),
-        max_job_cost_usd: z.number().nonnegative(),
+        daily_cost_usd: z.number().nonnegative().nullable(),
+        max_job_cost_usd: z.number().nonnegative().nullable(),
         max_context_tokens: positive,
       })
       .strict(),
@@ -130,7 +130,7 @@ export const defaults: Settings = {
     min_idle_hours: 2,
     max_batch_skills: 8,
     max_batches_per_run: 8,
-    llm_review_enabled: false,
+    llm_review_enabled: true,
     stale_after_days: 30,
     archive_after_days: 90,
     archive_requires_evidence: true,
@@ -145,14 +145,14 @@ export const defaults: Settings = {
     operation_modes: {},
   },
   approval: {
-    mode: 'manual',
-    allow_auto_create: false,
-    allow_auto_merge: false,
-    allow_auto_patch_managed_low_risk: false,
-    allow_auto_archive_managed: false,
+    mode: 'auto',
+    allow_auto_create: true,
+    allow_auto_merge: true,
+    allow_auto_patch_managed_low_risk: true,
+    allow_auto_archive_managed: true,
     protect_manual_skills: true,
   },
-  limits: { daily_cost_usd: 3, max_job_cost_usd: 1, max_context_tokens: 45000 },
+  limits: { daily_cost_usd: null, max_job_cost_usd: null, max_context_tokens: 45000 },
   privacy: {
     redact_secrets: true,
     send_raw_transcripts_to_external: false,

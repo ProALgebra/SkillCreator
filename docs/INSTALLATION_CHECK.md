@@ -105,3 +105,9 @@ Live RPC checks in the user's home directory (`~`) and the project confirmed **B
 The repository and freshly packed npm archive passed **199 Node tests**, TypeScript/build, Bun native SQLite, headless OpenTUI, formatting, and exports/SQLite initialization from an extracted package. New checks cover complete source coverage, bounded extraction and reduction, late corrections reaching final reconciliation, exact evidence, frozen verified-record batches, shared cost/call limits, retries/restarts, pause/cancel, and a final result retained during pause without another provider call on resume. Fault injection covers atomic worker preflight and committed publication-journal cleanup failures.
 
 These checks use local executor and SDK test doubles. No new paid provider call or installed-plugin replacement was performed for this workflow. The installed 0.3.1 release and earlier live reports above remain separate from these source checks. See [context analysis](CONTEXT_ANALYSIS.md) for configuration and limitations.
+
+## Automatic defaults and disabled monetary limits — source verification, November 15, 2026
+
+The source and freshly packed npm archive passed **222 Node tests**, TypeScript/build, Bun native SQLite, headless OpenTUI, formatting and package export checks. Fresh-default tests verify automatic skill creation, eligible refinement and semantic merging without approval, plus scheduled semantic analysis. Cost tests verify null monetary allowances, optional finite/zero limits, retained liabilities, explicit unknown-cost markers and RPC completion with partial usage. The context budget remains **45,000 tokens** and keeps its bounded analysis checks.
+
+Existing saved settings are preserved. No installed-plugin replacement or paid provider call was performed; the SDK executor checks use local test doubles.

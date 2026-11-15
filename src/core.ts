@@ -877,11 +877,15 @@ export class CuratorCore {
         const run_id = randomUUID();
         const cap = execution.max_cost_usd ?? settings.limits.max_job_cost_usd;
         ensure(
-          Number.isFinite(cap) && cap >= 0 && cap <= settings.limits.max_job_cost_usd,
+          cap === null ||
+            (Number.isFinite(cap) &&
+              cap >= 0 &&
+              (settings.limits.max_job_cost_usd === null ||
+                cap <= settings.limits.max_job_cost_usd)),
           'budget_exceeded',
           'Job budget exceeds the configured limit',
         );
-        if (cap > 0 && plan.batches.length) {
+        if (cap !== null && cap > 0 && plan.batches.length) {
           const affordable = Math.floor((this.jobs.remainingBudget(scope) + 1e-9) / cap);
           ensure(
             affordable > 0,
@@ -1118,6 +1122,7 @@ export class CuratorCore {
           status: j.status,
           progress: j.progress,
           cost: j.cost,
+          cost_known: j.cost_known !== false,
           ...('analysis' in j ? { analysis: j.analysis } : {}),
         };
       }
@@ -1154,7 +1159,7 @@ export class CuratorCore {
           jobid(),
           actor,
           this.required(i.lease_token, 'lease_token'),
-          { output: i.result, cost_usd: this.required(i.cost_usd, 'cost_usd') },
+          { output: i.result, cost_usd: i.cost_usd, cost_known: i.cost_known },
         );
         this.advanceAnalyses();
         return this.jobView(completed);
@@ -1211,10 +1216,14 @@ export class CuratorCore {
       case 'stats.costs':
         return {
           cost_usd: this.jobs.status(scope).cost,
+          cost_known: this.jobs.list(scope).every((job) => job.cost_known !== false),
           jobs: this.page(
-            this.jobs
-              .list(scope)
-              .map((j) => ({ job_id: j.job_id, cost: j.cost, executor_mode: j.executor_mode })),
+            this.jobs.list(scope).map((j) => ({
+              job_id: j.job_id,
+              cost: j.cost,
+              cost_known: j.cost_known !== false,
+              executor_mode: j.executor_mode,
+            })),
             i,
           ),
         };

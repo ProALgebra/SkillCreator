@@ -18,6 +18,9 @@ Changes are listed by version. These entries describe repository versions; they 
 
 ### Changed
 
+- Enable automatic publication and scheduled semantic optimization on fresh installations. Eligible managed-skill creation, low-risk updates, merging and archival have automatic permissions; saved policy overrides are preserved.
+- Disable daily and job/analysis monetary caps by default using explicit `null` settings. Keep the 45,000-token context budget and bounded analysis enabled.
+- Expose incomplete usage accounting with `cost_known:false`; unlimited executions no longer need an invented cost report, and explicit finite caps remain supported.
 - Expand verified-learning, conversation-refinement, and semantic-optimizer prompts using Hermes-inspired task-class organization, actionable procedures, scoped preferences, and lesson deduplication.
 - Align instructions with append-only refinements, bounded catalog visibility, literal evidence, and server-preserved resources. See [prompt design](docs/PROMPTS.md).
 

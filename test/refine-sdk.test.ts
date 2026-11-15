@@ -207,9 +207,18 @@ test('the real SDK scheduler reviews failed and successful tools after a final r
     const proposals = ((await call('proposals.list')) as { items: Proposal[] }).items;
     assert.equal(proposals.length, 1);
     assert.equal(proposals[0]!.operation, 'create');
-    assert.equal(proposals[0]!.status, 'pending');
+    assert.equal(
+      proposals[0]!.status,
+      'applied',
+      'Fresh-install publication applies supported results automatically',
+    );
+    assert.equal(
+      jobs[0]!.cost_known,
+      false,
+      'SDK text-only generation does not provide a known actual cost',
+    );
     assert.ok(proposals[0]!.source_refs.includes(reviewedSnapshot!.snapshot_id));
-    assert.equal(((await call('skills.list')) as { items: unknown[] }).items.length, 0);
+    assert.equal(((await call('skills.list')) as { items: unknown[] }).items.length, 1);
   } finally {
     await cleanup?.();
     delete process.env[tokenEnvironment];

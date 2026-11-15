@@ -31,7 +31,7 @@ function candidate(job: Job, name: string, target?: Skill) {
   };
 }
 
-test('publication mode is manual by default and its switch preserves independent safety and archive settings', async (t) => {
+test('configured manual publication can switch modes while preserving independent safety and archive settings', async (t) => {
   const { call } = fixture(t);
   const initial = (await call('settings.get')) as SettingsResponse;
   assert.equal(initial.settings.approval.mode, 'manual');
@@ -215,7 +215,7 @@ test('publication mode rejects absent or invalid modes and missing mutation prer
 });
 
 test('only administrators may switch publication and their requests stay within authorized tenant, workspace and global scope', async (t) => {
-  const { core, call } = fixture(t);
+  const { core, call } = fixture(t, {}, { productionDefaults: true });
   const input = { publication_mode: 'auto' as const, expected_revision: 0 };
   for (const role of ['viewer', 'editor', 'curator', 'worker'] as const)
     await assert.rejects(

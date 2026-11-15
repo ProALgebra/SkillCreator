@@ -22,18 +22,18 @@ Conversation material remains unverified even when a quotation is valid. Approva
 
 ## Limits and settings
 
-| Limit                | Behavior                                                                                          |
-| -------------------- | ------------------------------------------------------------------------------------------------- |
-| Full redacted source | At most 2,000,000 UTF-16 characters                                                               |
-| Source parts         | At most 256; exceeding the cap returns `budget_exceeded`                                          |
-| Calls per analysis   | `analysis.max_calls`, default 64, configurable up to 256                                          |
-| Part overlap         | `analysis.overlap_chars`, default 128; reduced when necessary to respect boundaries and part size |
-| Input size per call  | Derived from `limits.max_context_tokens`, with output and transport reserves                      |
-| Cost                 | One analysis-wide allowance, also subject to daily and concurrency limits                         |
+| Limit                | Behavior                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| Full redacted source | At most 2,000,000 UTF-16 characters                                                                   |
+| Source parts         | At most 256; exceeding the cap returns `budget_exceeded`                                              |
+| Calls per analysis   | `analysis.max_calls`, default 64, configurable up to 256                                              |
+| Part overlap         | `analysis.overlap_chars`, default 128; reduced when necessary to respect boundaries and part size     |
+| Input size per call  | Derived from `limits.max_context_tokens`, with output and transport reserves                          |
+| Cost                 | Daily and analysis allowances default to `null` (disabled); finite allowances are shared across parts |
 
 The source and part caps produce explicit errors. They do not return a successful analysis of a truncated prefix. A small context budget can also fail if the fixed prompt, catalog, source framing, or a required reconciliation request cannot fit.
 
-Apply a settings patch through `/skills-settings` or `settings.patch`:
+The context budget remains enabled at **45,000 tokens** by default. Daily and job/analysis monetary limits default to `null`, which disables those cost caps; finite zero cost instead forbids spending. Existing saved overrides are preserved on upgrade. To enable optional finite cost limits or adjust the context budget, apply a settings patch through `/skills-settings` or `settings.patch`:
 
 ```json
 {
@@ -49,7 +49,7 @@ Apply a settings patch through `/skills-settings` or `settings.patch`:
 }
 ```
 
-`settings.patch` requires the current settings revision and an idempotency key. Changing these limits does not change publication mode or grant permission to send transcripts to an external worker. External execution still requires `privacy.send_raw_transcripts_to_external=true`.
+`settings.patch` requires the current settings revision and an idempotency key. Set a monetary field back to `null` to disable that cost limit; the context size must remain a positive integer. Changing these limits does not change publication mode or grant permission to send transcripts to an external worker. External execution still requires `privacy.send_raw_transcripts_to_external=true`.
 
 The input estimate uses three serialized UTF-16 characters per token. Before calculating the input allowance, it reserves `execution.max_tokens` for generated output, or a default output reserve, plus a transport margin. The complete serialized request counts toward that allowance: instructions, catalog, metadata, quotations, and escaped source text all consume space. `max_tokens` is an output allowance, not an input context size.
 
@@ -57,9 +57,9 @@ This is an approximation, rather than a provider-specific tokenizer. The plugin 
 
 ## Cost and call accounting
 
-For a multipart analysis, `execution.max_cost_usd` is the total analysis allowance. Omitting it uses the applicable `limits.max_job_cost_usd` default. Extraction, reconciliation, and reduction share that allowance; each child does not receive a fresh full allowance. Completed work and retained reservations count before further work is accepted. `analysis.max_calls` bounds calls across stages, including explicit retry attempts.
+For a multipart analysis, a finite `execution.max_cost_usd` is the total analysis allowance. Omitting it uses the applicable `limits.max_job_cost_usd` default, which is `null` (unlimited). Extraction, reconciliation, and reduction share a configured finite allowance; each child does not receive a fresh full allowance. Completed work and retained reservations count before further work is accepted. `analysis.max_calls` bounds calls across stages, including explicit retry attempts, even when cost is unlimited.
 
-A valid result with no candidates can complete an analysis. An exhausted budget or call allowance does not turn unfinished work into success. When a provider or worker reports actual usage, that usage is accounted for; where the built-in SDK cannot report usage, reservations are charged conservatively. These limits bound plugin accounting, rather than establishing a hard provider invoice guarantee.
+A valid result with no candidates can complete an analysis. An exhausted budget or call allowance does not turn unfinished work into success. When a provider or worker reports actual usage, that usage is accounted for. With finite cost caps, built-in SDK executions without usage data conservatively charge their reservation. With unlimited cost, missing usage is reported as `cost_known:false`; numeric cost contains only known charges and does not establish a zero provider bill. Optional finite limits bound plugin accounting, rather than establishing a hard provider invoice guarantee.
 
 ## Status, pause, and recovery
 

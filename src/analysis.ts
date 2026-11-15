@@ -48,7 +48,7 @@ interface Analysis extends Scope {
   frontier: string[];
   pending_reduction?: { job_id: string; consumed: number };
   final_pending?: boolean;
-  budget_total: number;
+  budget_total: number | null;
   max_calls: number;
   status: 'active' | 'paused' | 'blocked' | 'completed' | 'cancelled';
   created_at: string;
@@ -87,11 +87,14 @@ export class ConversationAnalysisService {
     );
     const total = execution?.max_cost_usd ?? settings.limits.max_job_cost_usd;
     ensure(
-      Number.isFinite(total) && total > 0 && total <= settings.limits.max_job_cost_usd,
+      total === null ||
+        (Number.isFinite(total) &&
+          total > 0 &&
+          (settings.limits.max_job_cost_usd === null || total <= settings.limits.max_job_cost_usd)),
       'budget_exceeded',
       'Analysis needs a positive budget within the configured limit',
     );
-    const perCall = total / (estimated + Math.min(2, count));
+    const perCall = total === null ? null : total / (estimated + Math.min(2, count));
     return this.store.transaction(() => {
       const captured = this.review.capture(scope, actor, prepared);
       const full = this.source(scope, captured.snapshot_ids[0]!);
@@ -128,7 +131,7 @@ export class ConversationAnalysisService {
           analysis_id: id,
           analysis_phase: 'final',
         },
-        { ...execution, max_cost_usd: perCall },
+        { ...execution, ...(perCall === null ? {} : { max_cost_usd: perCall }) },
         marker,
       );
       parent.status = 'waiting_parts';
@@ -392,9 +395,22 @@ export class ConversationAnalysisService {
       jobs.reduce((n, j) => n + j.attempt, 0) +
       (['queued', 'waiting_executor'].includes(job.status) ? 1 : 0);
     ensure(attempts <= a.max_calls, 'budget_exceeded', 'Analysis call limit is exhausted');
+    if (a.budget_total === null) return;
     const cost = jobs.reduce((n, j) => n + j.cost, 0);
+    const retained = this.jobs.reservedCost(
+      a,
+      jobs.map((child) => child.job_id),
+      job.status === 'running' ? job.attempt_id : undefined,
+    );
+    const reservation = job.max_cost_usd === null ? null : Math.max(0, job.max_cost_usd - job.cost);
     ensure(
-      cost + Math.max(0, job.max_cost_usd - job.cost) <= a.budget_total + 1e-9,
+      Number.isFinite(cost) &&
+        cost >= 0 &&
+        Number.isFinite(retained) &&
+        retained >= 0 &&
+        reservation !== null &&
+        Number.isFinite(reservation) &&
+        cost + retained + reservation <= a.budget_total + 1e-9,
       'budget_exceeded',
       'Analysis total budget is exhausted',
     );
@@ -687,6 +703,7 @@ export class ConversationAnalysisService {
       parts_completed: a.leaf_jobs.filter((id) => this.jobs.get(a, id).status === 'completed')
         .length,
       cost_usd: children.reduce((n, j) => n + j.cost, 0),
+      cost_known: children.every((j) => j.cost_known !== false),
       budget_total: a.budget_total,
       calls_used: children.reduce((n, j) => n + j.attempt, 0),
       max_calls: a.max_calls,

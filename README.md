@@ -11,7 +11,7 @@ Skill Curator is an OpenCode plugin with a persistent SQLite catalog, conversati
 
 - **Learn from conversations.** Analyze the current conversation or a selected past conversation, including errors, corrections, tool results, and reusable procedures.
 - **Maintain the library.** Propose focused updates, consolidate overlapping skills, and review stale skills in bounded batches.
-- **Control publication.** Review proposals and diffs before applying them, or explicitly enable automatic publication and merging.
+- **Control publication.** Publish eligible changes automatically by default, or switch to manual proposal review.
 - **Preserve complete packages.** Keep scripts, references, templates, and binary assets with their skills. Merges retain the original packages for recovery.
 - **Manage skills in the terminal.** Browse, search, edit, archive, restore, pin, lock, and inspect version history through `/skills-manager`.
 - **Integrate through RPC.** Use the same authorization, revisions, idempotency, budgets, and job lifecycle from the TUI, TypeScript/Python clients, or external workers.
@@ -103,22 +103,22 @@ The model normally follows the source conversation. Override it or change thresh
 
 The scheduler also respects learning pauses, `auto_learning.enabled`, `on_session_end`, `quiet_hours` in UTC, child-session settings, and budget/concurrency limits. If `conversation_review.enabled=false`, the original verified-fragment trigger remains available through `auto_learning.every_n_sessions`, for example using successful test-command results.
 
-**Publication requires manual approval by default.** To enable automatic creation and eligible low-risk updates, choose `/skills-publication` → **Automatic**. Choose **Manual** to restore approval. The switch applies to future analysis results and does not apply existing pending proposals.
+**Publication is automatic by default.** New skills, eligible low-risk managed updates, merges, and evidence-backed archival have automatic permissions enabled. Choose `/skills-publication` → **Manual** to require approval. The switch applies to future analysis results and does not apply existing pending proposals. Existing saved overrides are preserved on upgrade.
 
-Conversation snapshots are unverified input. Literal source quotations provide a review trail, but do not independently verify a model's conclusions. `/skills-learn` is the separate path for sources marked `verified:true`. Large conversations retain their complete redacted source and use bounded extraction and reconciliation jobs under one analysis budget. Source and part limits fail explicitly instead of silently truncating; SDK-compacted conversations may already lack original messages. See [context analysis](docs/CONTEXT_ANALYSIS.md) for limits, cost, progress, and recovery.
+Conversation snapshots are unverified input. Literal source quotations provide a review trail, but do not independently verify a model's conclusions. `/skills-learn` is the separate path for sources marked `verified:true`. Daily and job/analysis cost limits default to `null`, which disables monetary caps. The context budget remains **45,000 tokens** by default: large conversations retain their complete redacted source and use bounded extraction and reconciliation jobs. Source, part, call, and concurrency limits also remain active; SDK-compacted conversations may already lack original messages. The plugin does not discover the model's context window, so a provider can still reject a request. See [context analysis](docs/CONTEXT_ANALYSIS.md) for settings, cost, progress, and recovery.
 
 ## Automatic curation
 
-Use `/skills-optimize` → **Run now** to review the library. For scheduled analysis, select **Automatic review → Semantic optimization**.
+Use `/skills-optimize` → **Run now** to review the library. Scheduled semantic analysis is enabled by default; **Automatic review** changes its mode.
 
-| Setting                          | Default                                            |
-| -------------------------------- | -------------------------------------------------- |
-| Semantic background optimization | Disabled                                           |
-| Review interval                  | 168 hours / 7 days                                 |
-| Required inactivity              | 2 hours                                            |
-| Maximum group size               | 8 skills                                           |
-| Maximum groups per pass          | 8, subject to context and budget limits            |
-| Automatic merging                | Disabled; also requires automatic publication mode |
+| Setting                          | Default                                                         |
+| -------------------------------- | --------------------------------------------------------------- |
+| Semantic background optimization | Enabled                                                         |
+| Review interval                  | 168 hours / 7 days                                              |
+| Required inactivity              | 2 hours                                                         |
+| Maximum group size               | 8 skills                                                        |
+| Maximum groups per pass          | 8, subject to context and budget limits                         |
+| Automatic merging                | Enabled for eligible managed skills under automatic publication |
 
 The model returns a structured `keep`, `patch`, `merge`, or `archive` plan. The server validates scope, source revisions and hashes, protection policies, package resources, and source coverage. Merges create compact root instructions and retain complete original packages under `sources/<skill_id>/`.
 
@@ -159,7 +159,7 @@ See the [RPC reference](docs/RPC.md), [TypeScript example](examples/client.ts), 
 | [Specification](docs/SPECIFICATION.md)            | Original design requirements                                           |
 | [Task history](TASKS.md)                          | Implementation and verification record                                 |
 
-The built-in direct API returns text without provider usage details, so billing conservatively consumes the reserved budget. It does not enforce a hard provider invoice limit. The SDK also lacks authenticated caller identity and private live-event filtering for plugin RPC; Skill Curator uses capability authentication and authorized durable event replay.
+The built-in direct API returns text without provider usage details. With a finite cost cap, accounting conservatively consumes its reservation; with unlimited cost, the job reports `cost_known:false` and numeric cost is only the known subtotal. Neither mode enforces a hard provider invoice limit. The SDK also lacks authenticated caller identity and private live-event filtering for plugin RPC; Skill Curator uses capability authentication and authorized durable event replay.
 
 ## Development
 

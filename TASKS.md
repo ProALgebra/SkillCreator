@@ -82,6 +82,14 @@ Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked co
 50. [x] Harden publication recovery so postcommit cleanup failures preserve committed packages and pending recovery prevents newer publications from being overwritten. Injected cleanup, rollback, ambiguous commit, nested transaction and restart failures passed.
 51. [x] Verify context limits, partial failures, retries/restarts, corrections, privacy, costs, evidence, lease and publication recovery; update user documentation and mark verified tasks complete. All 199 Node tests, typecheck/build, Bun native SQLite, headless OpenTUI, formatting, and extracted npm package checks passed. No new paid live-model run or installed-plugin update was performed.
 
+## Automatic defaults without monetary caps
+
+52. [x] Define an explicit JSON-safe unlimited setting for monetary limits and make unlimited spending the fresh-install default. Retain the 45,000-token context budget and bounded analysis, as requested.
+53. [x] Update job routing, reservations, retries, executors, optimization and multi-part analysis to honor disabled monetary limits while retaining explicit finite limits and truthful cost accounting. Unlimited allowances use null, incomplete actual usage is marked cost_known:false, and finite budgets include retained liabilities without double counting.
+54. [x] Make automatic publication and semantic optimization the defaults, including eligible managed-skill creation, updates, merging and archival, while retaining source, scope and package-integrity validation. Fresh-default integration checks cover automatic creation, refinement, semantic merging and scheduled model review.
+55. [x] Update configuration examples and user documentation to describe the new defaults, retained context budget, cost visibility and preserved existing settings.
+56. [x] Verify unlimited and finite-limit workflows, publication and scheduler defaults, accounting, RPC serialization, native runtimes and packaging; mark verified tasks complete. All 222 Node tests, typecheck/build, Bun native SQLite, headless OpenTUI, formatting and extracted npm package checks passed. Context remains 45,000 tokens; no installed-plugin update or paid live-model run was performed.
+
 ## Verification history and design decisions
 
 - The initial working directory contained only the specification, with no implementation, local Git repository, or project conventions.
@@ -124,3 +132,10 @@ Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked co
 - Legacy verified learning uses canonical record IDs/hashes, exact evidence validation, sequential frozen batches, explicit oversized-record reasons, and shared analysis cost/call limits.
 - Lease preflight is atomic with acceptance. Publication recovery preserves committed files and blocks later writes until pending journals can be reconciled.
 - Passed all **199 Node tests**, TypeScript/build, Bun native SQLite, headless OpenTUI, formatting, and package exports from the freshly packed npm archive. The new workflow was tested locally with executor/SDK test doubles; installed releases and earlier live reports were not changed.
+
+## Automatic defaults and unlimited monetary allowances — November 15, 2026
+
+- Fresh installations use automatic publication and semantic scheduled optimization. Model-created skills, eligible managed refinements, merges and archival have automatic permissions; source integrity, scope, pin/lock and manual-skill protections remain enforced. Saved setting overrides are preserved.
+- Monetary limits default to null; explicit finite limits and finite zero retain their meanings. The context budget remains 45,000 tokens, with the original context checks, bounded splitting and analysis call limits.
+- Unlimited jobs preserve known usage subtotals and expose unknown actual usage with cost_known:false. Finite daily/job/analysis budgets account for queued and retained attempt reservations, including partial accounting and retries; no Infinity or NaN is persisted or returned as a configured allowance.
+- Passed **222 Node tests**, typecheck/build, Bun native SQLite, headless OpenTUI, formatting and extracted npm package exports. Tests include SDK executor doubles, automatic creation/refinement/merging, scheduled semantic review, optional finite budgets, partial/unknown accounting and external RPC completion. No installed release or paid live-provider session was changed.

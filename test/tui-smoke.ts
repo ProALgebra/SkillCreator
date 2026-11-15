@@ -10,6 +10,21 @@ import plugin from '../dist/tui.js';
 delete process.env.DEBUG;
 const dir = mkdtempSync(join(tmpdir(), 'curator-tui-'));
 const core = new CuratorCore({ dataDirectory: dir });
+// Exercise switching an existing installation from its explicitly saved manual policy.
+core.store.put('settings', JSON.stringify(['global']), {
+  revision: 0,
+  patch: {
+    approval: {
+      mode: 'manual',
+      allow_auto_create: false,
+      allow_auto_merge: false,
+      allow_auto_patch_managed_low_risk: false,
+      allow_auto_archive_managed: false,
+    },
+    curator: { llm_review_enabled: false },
+    limits: { daily_cost_usd: 3, max_job_cost_usd: 1, max_context_tokens: 45000 },
+  },
+});
 const owner: Principal = {
   subject: 'tui-owner',
   tenant_id: 'tui',

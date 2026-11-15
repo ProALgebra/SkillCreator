@@ -1,6 +1,6 @@
 # Automatic curator
 
-The curator maintains managed skills in the current workspace: it identifies semantic overlap and proposes edits, merges, and archival. The model returns a declarative plan; the server validates it and saves immutable proposals. Initial settings retain manual publication and disable the LLM optimization pass.
+The curator maintains managed skills in the current workspace: it identifies semantic overlap and proposes edits, merges, and archival. The model returns a declarative plan; the server validates it and saves immutable proposals. Fresh installations enable scheduled LLM optimization and automatic publication of eligible changes, including merging and evidence-backed archival. Existing saved settings are retained on upgrade.
 
 ## Controls
 
@@ -39,7 +39,7 @@ JSON patch for the schedule and automatic merging:
 }
 ```
 
-Without an explicit override, scheduled review inherits the model of the most recent available primary conversation. If none is available, it uses OpenCode's base model. Manual commands pass the model selected in the TUI. The shared job system limits cost and concurrency; built-in accounting retains the SDK limitations documented in [ACCEPTANCE.md](ACCEPTANCE.md).
+Without an explicit override, scheduled review inherits the model of the most recent available primary conversation. If none is available, it uses OpenCode's base model. Manual commands pass the model selected in the TUI. Cost limits default to `null` (disabled); finite optional limits and concurrency checks use the shared job system. Built-in accounting retains the SDK limitations documented in [ACCEPTANCE.md](ACCEPTANCE.md).
 
 ## Plans and merging
 
@@ -49,15 +49,15 @@ Each supplied skill must appear exactly once in the plan: `keep`, `patch`, `merg
 
 A merge creates a coherent root `SKILL.md` shorter than the combined source root instructions. Every source file is preserved byte for byte under `sources/<skill_id>/`; the new instructions must link to relocated resources. Scripts are not executed. Source skills become `superseded` only when the proposal is applied. Patches preserve every supporting file and the skill name. With `archive_requires_evidence` enabled, archival requires observed usage and sufficient time since the most recent use/update.
 
-Compression and quotes do not prove semantic equivalence. Reports explicitly contain `semantic_equivalence_verified:false`: the model may omit an important detail, so the initial policy requires reviewing the diff. Root instructions may shrink while the full package grows because original source files are retained.
+Compression and quotes do not prove semantic equivalence. Reports explicitly contain `semantic_equivalence_verified:false`: the model may omit an important detail. Manual publication remains available through `/skills-publication` when review before application is desired. Root instructions may shrink while the full package grows because original source files are retained.
 
 ## Large libraries and reports
 
-Each job contains one batch of complete context. Unreviewed identifiers remain in a durable continuation queue; `next_cursor` indicates remaining work. Oversized packages are skipped with `package_exceeds_context_limit`; protected packages use `protected_or_inactive`. Changes to reviewed skills do not reset the continuation: remaining skills receive current revisions/hashes when the next job is prepared. New skills enter the next full sweep. Run responses and reports include skipped entries. Group selection is heuristic and does not guarantee the smallest possible number of skills.
+Each job contains one batch of complete context. Unreviewed identifiers remain in a durable continuation queue; `next_cursor` indicates remaining work. The context budget remains enabled at `limits.max_context_tokens=45000` by default. Oversized packages are skipped with `package_exceeds_context_limit`; protected packages use `protected_or_inactive`. Changes to reviewed skills do not reset the continuation: remaining skills receive current revisions/hashes when the next job is prepared. New skills enter the next full sweep. Run responses and reports include skipped entries. Group selection is heuristic and does not guarantee the smallest possible number of skills.
 
 `curator.status` contains current library-wide metrics and per-batch reports. Each report distinguishes `before`, `proposed`, and `current`: proposed changes are never presented as applied. Metrics count active/stale skills, root-instruction characters, and complete-package characters. These are character counts, not exact counts from a provider-specific tokenizer.
 
-A repeated plan for the same source revisions reuses the existing proposal, including a rejected proposal. A conflicting pending optimization for the same revision is blocked. The available daily budget, including queued jobs, limits how many batches are accepted; the rest remain in the continuation queue. Accepted batches are enqueued transactionally; failure in a later batch rolls back acceptance of earlier batches.
+A repeated plan for the same source revisions reuses the existing proposal, including a rejected proposal. A conflicting pending optimization for the same revision is blocked. When a finite daily budget is configured, it includes queued jobs and limits how many batches are accepted; the rest remain in the continuation queue. Accepted batches are enqueued transactionally; failure in a later batch rolls back acceptance of earlier batches.
 
 ## Rollback
 

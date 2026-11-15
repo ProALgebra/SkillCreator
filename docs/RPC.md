@@ -67,7 +67,7 @@ All 80 methods are registered. A shared strict input schema rejects unknown fiel
 | executors.set_policy                                | Execution `patch`, the settings' `expected_revision`                                                             |
 | jobs.lease                                          | `worker_id`, `worker_kind`: valeria/external                                                                     |
 | jobs.heartbeat                                      | `job_id`, `worker_id`, `lease_token`, `progress` from 0 to 1                                                     |
-| jobs.complete                                       | `job_id`, `worker_id`, `lease_token`, `result`, `cost_usd`                                                       |
+| jobs.complete                                       | `job_id`, `worker_id`, `lease_token`, `result`, `cost_usd?`, `cost_known?`                                       |
 | jobs.fail                                           | `job_id`, `worker_id`, `lease_token`, `error`, `cost_usd?`                                                       |
 
 `expected_revision` belongs to the entity being changed; proposals and skills have independent counters. A new proposal records the revisions of all affected skills. After approval, use the proposal's new expected revision. A changed source package blocks apply even if the proposal remains approved.
@@ -77,6 +77,8 @@ For an unknown local outcome, an administrator can explicitly confirm that execu
 `skills.list/search` filters: `scope`, `owner`, `state`, `management_policy`, `managed`, `tag`, `used`, `pinned`, `locked`, `name`. Sort fields: `name`, `updated_at`, `use_count`. Search includes file contents. Settings are returned with their revision.
 
 ## Switching publication mode
+
+Fresh installations use `approval.mode=auto` with automatic create, managed low-risk patch, merge, and managed archive permissions enabled. Existing saved policy overrides are preserved. Set manual publication when approval before application is desired; rollback and split proposals still require approval under the automatic policy.
 
 `settings.set_publication_mode` is a dedicated administrator endpoint. Read `settings.get` first, then pass its `revision`:
 
@@ -98,6 +100,10 @@ await curator['settings.set_publication_mode'](
 ## Jobs and model output
 
 `execution.mode`: direct/session/valeria/external/auto. Accepted parameters also include model/provider/variant, timeout_sec, max_tokens, max_iterations, priority, max_cost_usd, max_parallel, fallback_policy, and approval_mode. These are persisted in the job; [ACCEPTANCE.md](ACCEPTANCE.md) describes which parameters the built-in SDK adapter can enforce. Workers receive the complete policy and must honor it.
+
+`settings.limits.daily_cost_usd` and `max_job_cost_usd` accept `null` to disable the corresponding monetary limit; both default to `null`. Finite zero cost forbids paid execution. The context budget remains a positive integer, with `limits.max_context_tokens=45000` by default. A finite `execution.max_cost_usd` supplies a job or full-analysis allowance even when the settings default is unlimited. Public jobs use `max_cost_usd:null` for an unlimited allowance. Numeric `cost` is the known subtotal; check `cost_known` before treating it as a complete charge. Unlimited SDK executions without usage data return `cost_known:false`, rather than representing missing usage as a confirmed free call.
+
+For an unlimited external job, `jobs.complete` may omit unknown `cost_usd`, or send a known subtotal with `cost_known:false`. A finite job cap requires a complete nonnegative cost report. Under an optional finite daily cap, an explicit finite job/operation cap is needed for reservation; prior unreserved unknown costs block further acceptance until accounting is resolved or that daily limit is disabled.
 
 Learner output:
 
