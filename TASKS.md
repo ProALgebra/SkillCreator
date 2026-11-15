@@ -73,6 +73,15 @@ Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked co
 44. [x] Commit the complete English-language repository and record the final verification results. The commit includes all 26 changed files, English contribution templates, release notes, and version 0.3.2; formatting and staged diff checks passed.
 45. [x] Push the pending commits to `origin/master`, record publication, and verify that the local and remote branches match. Conversation review, automatic curation, manager fixes, and English release 0.3.2 were pushed; the remote SHA was confirmed against local HEAD.
 
+## Complete analysis beyond the context window
+
+46. [x] Plan durable bounded analysis: preserve complete redacted sources, split conversations at message/tool boundaries, record immutable parts and progress, and reserve context for instructions and output. Splitter and budget tests cover complete coverage, Unicode, tool pairs, JSON overhead, and explicit source/part caps.
+47. [x] Implement resumable conversation-part analysis and final reconciliation of candidates, including later corrections, exact evidence references, deduplication, relevant skill selection, and a shared cost/call limit. Bounded reductions, parent controls, deferred final results during pause, source coverage, and restart without replay passed.
+48. [x] Freeze Learner source manifests, validate evidence against delivered records, and process only completed records while preserving deferred work. Exact manifests, omitted-stage citations, privacy, source changes, sequential continuation and restart/retry checks passed.
+49. [x] Prepare external-worker context atomically before accepting a lease; reject invalid context without stranding reservations or blocking valid queued work. Preflight rejection, valid successors, storage rollback and source/privacy/context checks passed.
+50. [x] Harden publication recovery so postcommit cleanup failures preserve committed packages and pending recovery prevents newer publications from being overwritten. Injected cleanup, rollback, ambiguous commit, nested transaction and restart failures passed.
+51. [x] Verify context limits, partial failures, retries/restarts, corrections, privacy, costs, evidence, lease and publication recovery; update user documentation and mark verified tasks complete. All 199 Node tests, typecheck/build, Bun native SQLite, headless OpenTUI, formatting, and extracted npm package checks passed. No new paid live-model run or installed-plugin update was performed.
+
 ## Verification history and design decisions
 
 - The initial working directory contained only the specification, with no implementation, local Git repository, or project conventions.
@@ -107,3 +116,11 @@ Statuses: `[ ] pending`, `[-] in progress`, `[x] completed`. Tasks are marked co
 - All 147 Node tests, typecheck/build, Bun native SQLite, and headless OpenTUI checks passed. English UI assertions cover the same selection, publication, refinement, and optimizer workflows.
 - Formatting, local Markdown links, GitHub issue-template parsing, and npm package export checks passed. The archive includes the English specification, changelog, and contributor guide; runtime data and credentials remain excluded.
 - Recorded live-installation checks in docs/INSTALLATION_CHECK.md remain explicitly tied to the previously installed releases; this verification concerns the 0.3.2 repository and package.
+
+## Complete context analysis verification — November 15, 2026
+
+- Complete redacted conversations are retained up to the explicit source cap. Bounded message/tool parts cover the original without gaps; additional reductions keep reconciliation within the configured request budget.
+- A durable parent coordinates extraction and reconciliation. Only the accepted final result creates proposals and marks the source processed. Pause/resume, cancellation, invalid-part retry, restart, and uncertain worker acceptance were checked; completed parts are retained.
+- Legacy verified learning uses canonical record IDs/hashes, exact evidence validation, sequential frozen batches, explicit oversized-record reasons, and shared analysis cost/call limits.
+- Lease preflight is atomic with acceptance. Publication recovery preserves committed files and blocks later writes until pending journals can be reconciled.
+- Passed all **199 Node tests**, TypeScript/build, Bun native SQLite, headless OpenTUI, formatting, and package exports from the freshly packed npm archive. The new workflow was tested locally with executor/SDK test doubles; installed releases and earlier live reports were not changed.

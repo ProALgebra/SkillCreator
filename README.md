@@ -105,7 +105,7 @@ The scheduler also respects learning pauses, `auto_learning.enabled`, `on_sessio
 
 **Publication requires manual approval by default.** To enable automatic creation and eligible low-risk updates, choose `/skills-publication` → **Automatic**. Choose **Manual** to restore approval. The switch applies to future analysis results and does not apply existing pending proposals.
 
-Conversation snapshots are unverified input. Literal source quotations provide a review trail, but do not independently verify a model's conclusions. `/skills-learn` is the separate path for sources marked `verified:true`. Context may be truncated, and compacted conversations may no longer contain their original messages.
+Conversation snapshots are unverified input. Literal source quotations provide a review trail, but do not independently verify a model's conclusions. `/skills-learn` is the separate path for sources marked `verified:true`. Large conversations retain their complete redacted source and use bounded extraction and reconciliation jobs under one analysis budget. Source and part limits fail explicitly instead of silently truncating; SDK-compacted conversations may already lack original messages. See [context analysis](docs/CONTEXT_ANALYSIS.md) for limits, cost, progress, and recovery.
 
 ## Automatic curation
 
@@ -147,16 +147,17 @@ See the [RPC reference](docs/RPC.md), [TypeScript example](examples/client.ts), 
 
 ## Documentation
 
-| Guide                                             | Contents                                                        |
-| ------------------------------------------------- | --------------------------------------------------------------- |
-| [Architecture](docs/ARCHITECTURE.md)              | Modules, persistence, publication, and execution flow           |
-| [Curator](docs/CURATOR.md)                        | Optimization, schedules, reports, and rollback                  |
-| [Operations](docs/OPERATIONS.md)                  | Configuration, upgrades, backup, restore, and troubleshooting   |
-| [Security](docs/SECURITY.md)                      | Capabilities, scope isolation, privacy, and approval boundaries |
-| [Acceptance and limitations](docs/ACCEPTANCE.md)  | Verified behavior and SDK limitations                           |
-| [Installation checks](docs/INSTALLATION_CHECK.md) | Recorded checks against a real OpenCode service                 |
-| [Specification](docs/SPECIFICATION.md)            | Original design requirements                                    |
-| [Task history](TASKS.md)                          | Implementation and verification record                          |
+| Guide                                             | Contents                                                               |
+| ------------------------------------------------- | ---------------------------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)              | Modules, persistence, publication, and execution flow                  |
+| [Curator](docs/CURATOR.md)                        | Optimization, schedules, reports, and rollback                         |
+| [Context analysis](docs/CONTEXT_ANALYSIS.md)      | Complete conversation sources, bounded requests, budgets, and recovery |
+| [Operations](docs/OPERATIONS.md)                  | Configuration, upgrades, backup, restore, and troubleshooting          |
+| [Security](docs/SECURITY.md)                      | Capabilities, scope isolation, privacy, and approval boundaries        |
+| [Acceptance and limitations](docs/ACCEPTANCE.md)  | Verified behavior and SDK limitations                                  |
+| [Installation checks](docs/INSTALLATION_CHECK.md) | Recorded checks against a real OpenCode service                        |
+| [Specification](docs/SPECIFICATION.md)            | Original design requirements                                           |
+| [Task history](TASKS.md)                          | Implementation and verification record                                 |
 
 The built-in direct API returns text without provider usage details, so billing conservatively consumes the reserved budget. It does not enforce a hard provider invoice limit. The SDK also lacks authenticated caller identity and private live-event filtering for plugin RPC; Skill Curator uses capability authentication and authorized durable event replay.
 

@@ -5,6 +5,7 @@ import type { CuratorCore } from '../src/core.js';
 import type { Job } from '../src/jobs.js';
 import type { Skill, Proposal } from '../src/types.js';
 import type { Conversations } from '../src/refine.js';
+import { fitsContext } from '../src/context.js';
 
 const evidence = 'The retry integration test passed with a durable dispatch marker.';
 const content = [
@@ -140,9 +141,12 @@ test('refine preview and unchanged idempotent retry do not persist additional sn
   );
 });
 
-test('snapshot redaction occurs before persistence and model exposure, and context truncation is explicit', async (t) => {
+test('large conversation review preserves the complete redacted source and processes it only after final reconciliation', async (t) => {
   let core!: CuratorCore;
-  let modelContext: Record<string, unknown> | undefined;
+  const contexts: Record<string, unknown>[] = [];
+  const redacted =
+    'api_key=[REDACTED_SECRET]\n' + 'Very long tool output. '.repeat(10000) + '\n' + evidence;
+  let finalized = false;
   const { core: created, call } = fixture(t, {
     conversations: {
       ...history,
@@ -156,29 +160,61 @@ test('snapshot redaction occurs before persistence and model exposure, and conte
     },
     executors: {
       direct: async ({ job }) => {
-        modelContext = core.modelPayload(job);
-        return { output: { candidates: [] }, cost_usd: 0 };
+        const context = core.modelPayload(job);
+        contexts.push(context);
+        assert.equal(fitsContext(context, core.settings.get(scope).settings, job.execution), true);
+        assert.equal(JSON.stringify(context).includes('never-store-this-secret'), false);
+        assert.ok(
+          core.learning.sessions(scope).every((source) => !source.processed),
+          'Extraction and intermediate reconciliation must not mark source records processed',
+        );
+        if (job.payload.analysis_phase === 'final') {
+          finalized = true;
+          return { output: { candidates: [] }, cost_usd: 0 };
+        }
+        return { output: { candidates: [], observations: [] }, cost_usd: 0 };
       },
     },
   });
   core = created;
   await call('settings.patch', {
     expected_revision: 0,
-    patch: { limits: { max_context_tokens: 2000 } },
+    patch: { limits: { max_context_tokens: 8000 } },
   });
   const job = (await call('learning.refine', { session_ids: ['historical-session'] })) as Job;
-  assert.equal(job.payload.truncated, true);
+  assert.equal(job.status, 'waiting_parts');
+  assert.equal(job.payload.truncated, false);
+  assert.ok((job.payload.part_count as number) > 1);
   assert.equal(
     JSON.stringify(core.store.all('sessions')).includes('never-store-this-secret'),
     false,
   );
-  assert.match(core.learning.sessions(scope)[0]!.content, /CONVERSATION TRUNCATED/);
+  const source = core.learning
+    .sessions(scope)
+    .find((item) => item.stage_id.startsWith('snapshot:'))!;
+  assert.equal(source.content, redacted, 'The entire redacted source must remain available');
+  assert.ok(core.learning.sessions(scope).every((item) => !item.processed));
   await core.tick();
   assert.equal(core.jobs.get(scope, job.job_id).status, 'completed');
-  assert.equal((modelContext!.snapshot as { truncated: boolean }).truncated, true);
-  assert.ok(JSON.stringify(modelContext).length <= 6000);
-  assert.equal(JSON.stringify(modelContext).includes('never-store-this-secret'), false);
-  assert.equal(core.learning.sessions(scope)[0]!.processed, true);
+  assert.equal(finalized, true);
+  let covered = 0;
+  let rebuilt = '';
+  const extractions = contexts.filter((context) => context.snapshot);
+  assert.equal(extractions.length, job.payload.part_count);
+  for (const context of extractions) {
+    const part = context.part as { start: number; end: number };
+    const snapshot = context.snapshot as { content: string; truncated: boolean };
+    assert.equal(snapshot.truncated, false);
+    assert.ok(
+      part.start <= covered && part.end > covered,
+      'Parts must cover the source without gaps',
+    );
+    assert.equal(snapshot.content, redacted.slice(part.start, part.end));
+    rebuilt += snapshot.content.slice(covered - part.start);
+    covered = part.end;
+  }
+  assert.equal(rebuilt, redacted);
+  assert.ok(core.learning.sessions(scope).every((item) => item.processed));
 });
 
 test('conversation evidence rejects an invented quote and references to another snapshot', async (t) => {

@@ -4,7 +4,7 @@ import type { Change, PackageFiles, Proposal, Scope, Skill } from './types.js';
 import { now, sameScope } from './types.js';
 import { Store } from './store.js';
 import { PackageStore, metadata, validatePackage, renamePackage } from './packages.js';
-import { ensure } from './errors.js';
+import { ensure, CuratorError } from './errors.js';
 import { hash } from './security.js';
 import { containsSecrets, redact } from './learning.js';
 
@@ -16,6 +16,7 @@ interface Publication {
 }
 const publishedState = (state: Skill['state']) => state === 'active' || state === 'stale';
 export class Catalog {
+  private recoveryUncertain = false;
   constructor(
     readonly store: Store,
     readonly packages: PackageStore,
@@ -59,12 +60,36 @@ export class Catalog {
     }
   }
   recover(): void {
+    this.requireTopLevelPublication();
     for (const publication of this.store.all<Publication>('publications')) {
       const selected = publication.committed ? publication.after : publication.before;
       for (const s of publication.after)
         if (!selected.some((p) => p.skill_id === s.skill_id)) this.packages.remove(s);
       for (const s of selected) this.packages.write(s);
       this.store.delete('publications', publication.id);
+    }
+  }
+  get recoveryPending(): boolean {
+    return this.recoveryUncertain || this.store.all('publications').length > 0;
+  }
+  private requireTopLevelPublication(): void {
+    ensure(
+      !this.store.inTransaction,
+      'internal_error',
+      'Publication requires a top-level storage transaction',
+    );
+    ensure(
+      !this.recoveryUncertain,
+      'unknown_outcome',
+      'Publication outcome could not be verified; restart to recover before publishing',
+    );
+  }
+  private cleanupPublication(id: string): void {
+    try {
+      this.store.delete('publications', id);
+    } catch {
+      // Committed data and files remain authoritative. The retained journal
+      // must be reconciled before any later publication can touch files.
     }
   }
   verifyDisk(skill: Skill): void {
@@ -116,6 +141,8 @@ export class Catalog {
     event: string,
     finish?: () => void,
   ): Skill[] {
+    this.requireTopLevelPublication();
+    if (this.recoveryPending) this.recover();
     const publication: Publication = { id: randomUUID(), before, after, committed: false };
     this.store.put('publications', publication.id, publication);
     try {
@@ -139,16 +166,36 @@ export class Catalog {
         finish?.();
         this.store.put('publications', publication.id, { ...publication, committed: true });
       });
-      this.store.delete('publications', publication.id);
-      return after;
     } catch (error) {
+      // A transaction wrapper can throw after COMMIT. Read its durable phase
+      // only once the native transaction has ended; an exception is not proof
+      // that the catalog transaction rolled back.
+      let durable: Publication;
+      try {
+        ensure(!this.store.inTransaction, 'unknown_outcome', 'Storage transaction is unresolved');
+        const saved = this.store.get<Publication>('publications', publication.id);
+        ensure(saved, 'unknown_outcome', 'Publication recovery journal is unavailable');
+        durable = saved;
+      } catch {
+        this.recoveryUncertain = true;
+        throw new CuratorError(
+          'unknown_outcome',
+          'Publication outcome could not be verified; restart to recover before publishing',
+        );
+      }
+      if (durable.committed) {
+        this.cleanupPublication(publication.id);
+        return after;
+      }
       // Keep the recovery journal if rollback itself fails. Startup will refuse to open until repaired.
-      for (const skill of after)
-        if (!before.some((s) => s.skill_id === skill.skill_id)) this.packages.remove(skill);
-      for (const skill of before) this.packages.write(skill);
-      this.store.delete('publications', publication.id);
+      for (const skill of durable.after)
+        if (!durable.before.some((s) => s.skill_id === skill.skill_id)) this.packages.remove(skill);
+      for (const skill of durable.before) this.packages.write(skill);
+      this.store.delete('publications', durable.id);
       throw error;
     }
+    this.cleanupPublication(publication.id);
+    return after;
   }
   create(
     scope: Scope,

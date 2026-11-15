@@ -9,6 +9,7 @@ export interface Statement {
 export interface DatabasePort {
   readonly driver: 'bun:sqlite' | 'better-sqlite3';
   readonly open: boolean;
+  readonly inTransaction: boolean;
   prepare(sql: string): Statement;
   exec(sql: string): unknown;
   pragma(sql: string): unknown;
@@ -29,6 +30,9 @@ export function openDatabase(path: string): DatabasePort {
       driver: 'bun:sqlite',
       get open() {
         return open;
+      },
+      get inTransaction() {
+        return db.inTransaction;
       },
       prepare: (sql) => db.prepare(sql),
       exec: (sql) => db.exec(sql),
@@ -57,6 +61,9 @@ export function openDatabase(path: string): DatabasePort {
     driver: 'better-sqlite3',
     get open() {
       return db.open;
+    },
+    get inTransaction() {
+      return db.inTransaction;
     },
     prepare: (sql) => db.prepare(sql),
     exec: (sql) => db.exec(sql),

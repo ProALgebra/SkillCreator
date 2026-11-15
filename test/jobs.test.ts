@@ -234,8 +234,8 @@ test('job pause, resume and cancellation before dispatch do not spend tokens', a
   assert.equal(count, 0);
   assert.equal(core.jobs.get(scope, j.job_id).status, 'cancelled');
 });
-test('external workers receive no raw transcript without explicit disclosure setting', async (t) => {
-  const { call } = fixture(t);
+test('external learning requires disclosure opt-in before accepting a job or leasing its context', async (t) => {
+  const { call, core } = fixture(t);
   await bridge(call);
   await call('learning.ingest', {
     transcript: {
@@ -246,13 +246,15 @@ test('external workers receive no raw transcript without explicit disclosure set
       verified: true,
     },
   });
-  await call('learning.run', { execution: { mode: 'valeria' } });
+  await assert.rejects(call('learning.run', { execution: { mode: 'valeria' } }), code('forbidden'));
+  assert.equal(core.jobs.list(scope).length, 0);
+  assert.equal(core.learning.sessions(scope)[0]!.processed, false);
   const result = (await call(
     'jobs.lease',
     { worker_id: worker.subject, worker_kind: 'valeria' },
     worker,
-  )) as { context: { sessions: unknown[] } };
-  assert.deepEqual(result.context.sessions, []);
+  )) as { job: Job | null };
+  assert.equal(result.job, null);
 });
 test('LLM cannot write arbitrary skills or execute embedded instructions', async (t) => {
   let victim: Skill;

@@ -159,6 +159,10 @@ export default Plugin.define({
       }
     };
     const direct: Executor = async ({ job, signal }) => {
+      if (job.max_cost_usd <= job.cost)
+        throw new ExecutorPreflightError(
+          new CuratorError('budget_exceeded', 'No provider budget remains'),
+        );
       const context = modelPayload(job);
       const result = await ctx.experimental.generate.text(
         {
@@ -175,9 +179,13 @@ export default Plugin.define({
         { signal },
       );
       // SDK 2.3 direct generation reports text only. Charge the complete reservation conservatively.
-      return { output: parseModelJson(result.text), cost_usd: job.max_cost_usd };
+      return { output: parseModelJson(result.text), cost_usd: job.max_cost_usd - job.cost };
     };
     const session: Executor = async ({ job, signal }) => {
+      if (job.max_cost_usd <= job.cost)
+        throw new ExecutorPreflightError(
+          new CuratorError('budget_exceeded', 'No provider budget remains'),
+        );
       const context = modelPayload(job);
       // Register the chosen ID before create/prompt so event capture cannot recursively ingest it.
       const sessionID = 'ses_curator_' + job.job_id.replaceAll('-', '') + '_' + job.attempt;
@@ -232,7 +240,7 @@ export default Plugin.define({
           .join('\n');
         const cost = assistants.every((m) => m.cost !== undefined)
           ? assistants.reduce((sum, m) => sum + (m.cost ?? 0), 0)
-          : job.max_cost_usd;
+          : job.max_cost_usd - job.cost;
         return { output: parseModelJson(text), cost_usd: cost };
       } finally {
         signal.removeEventListener('abort', interrupt);

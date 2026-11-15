@@ -2,6 +2,25 @@
 
 Changes are listed by version. These entries describe repository versions; they do not imply publication to the npm registry.
 
+## Unreleased
+
+### Added
+
+- Complete redacted conversation snapshots with bounded part extraction, chronological reconciliation, durable progress, pause/resume and shared analysis cost/call limits.
+- Frozen verified-record batches with exact evidence references, sequential continuation and aggregate job status.
+- Configurable `analysis.max_calls` and `analysis.overlap_chars`, with input budgets reserving space for model output and request overhead.
+
+### Fixed
+
+- Validate external-worker context before accepting a lease, so failed preflight cannot strand a running job or reservation.
+- Preserve committed skill files when publication-journal cleanup fails, and reconcile pending journals before later publication.
+- Keep omitted Learner sources unprocessed and reject evidence from a different stage sharing the same conversation alias.
+
+### Changed
+
+- Expand verified-learning, conversation-refinement, and semantic-optimizer prompts using Hermes-inspired task-class organization, actionable procedures, scoped preferences, and lesson deduplication.
+- Align instructions with append-only refinements, bounded catalog visibility, literal evidence, and server-preserved resources. See [prompt design](docs/PROMPTS.md).
+
 ## 0.3.2 — 2026-11-14
 
 ### Changed

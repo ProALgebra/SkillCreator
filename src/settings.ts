@@ -7,6 +7,12 @@ const mode = z.enum(['direct', 'session', 'valeria', 'external', 'auto']);
 export const settingsSchema = z
   .object({
     enabled: z.boolean(),
+    analysis: z
+      .object({
+        max_calls: z.number().int().min(2).max(256),
+        overlap_chars: z.number().int().min(0).max(2048),
+      })
+      .strict(),
     conversation_review: z
       .object({
         enabled: z.boolean(),
@@ -99,6 +105,7 @@ export const settingsSchema = z
   );
 export const defaults: Settings = {
   enabled: true,
+  analysis: { max_calls: 64, overlap_chars: 128 },
   conversation_review: {
     enabled: true,
     every_n_actions: 10,

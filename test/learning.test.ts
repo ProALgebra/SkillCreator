@@ -25,7 +25,12 @@ const candidate = {
 };
 test('verified session → candidate → proposal → approval → published skill', async (t) => {
   const { core, call } = fixture(t, {
-    executors: { direct: async () => ({ output: { candidates: [candidate] }, cost_usd: 0.1 }) },
+    executors: {
+      direct: async ({ job }) => ({
+        output: { candidates: [{ ...candidate, source_refs: job.source_refs }] },
+        cost_usd: 0.1,
+      }),
+    },
   });
   await call('learning.ingest', { transcript });
   const j = (await call('learning.run', {
@@ -108,7 +113,12 @@ test('secrets are redacted before persistence and model exposure', async (t) => 
 });
 test('reprocessing verified knowledge produces no duplicate candidate or proposal', async (t) => {
   const { core, call } = fixture(t, {
-    executors: { direct: async () => ({ output: { candidates: [candidate] }, cost_usd: 0.1 }) },
+    executors: {
+      direct: async ({ job }) => ({
+        output: { candidates: [{ ...candidate, source_refs: job.source_refs }] },
+        cost_usd: 0.1,
+      }),
+    },
   });
   await call('learning.ingest', { transcript });
   for (let n = 0; n < 2; n++) {

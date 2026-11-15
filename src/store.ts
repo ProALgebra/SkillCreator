@@ -29,6 +29,8 @@ export const tables = [
   'usage',
   'idempotency',
   'publications',
+  'analyses',
+  'analysis_results',
   'control',
 ] as const;
 export type Table = (typeof tables)[number];
@@ -110,6 +112,9 @@ export class Store {
   }
   delete(table: Table, id: string): void {
     this.db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id);
+  }
+  get inTransaction(): boolean {
+    return this.depth > 0 || this.db.inTransaction;
   }
   transaction<T>(fn: () => T): T {
     const start = this.pending.length;

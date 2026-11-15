@@ -8,6 +8,7 @@ import type { Scope, Settings, Execution, Mode } from './types.js';
 export type JobStatus =
   | 'queued'
   | 'waiting_executor'
+  | 'waiting_parts'
   | 'running'
   | 'completed'
   | 'failed'
@@ -54,6 +55,12 @@ interface Lease extends Scope {
   token_hash: string;
   expires_at: string;
   deadline: string;
+}
+export interface PreparedLease<C> {
+  job: Job;
+  lease_token: string;
+  expires_at: string;
+  context: C;
 }
 export type Executor = (input: {
   job: Job;
@@ -355,6 +362,8 @@ export class JobService {
       this.unknown(j, 'Cancellation requested after acceptance; wait for executor acknowledgement');
       this.active.get(id)?.abort.abort();
     } else {
+      // Parents waiting for analysis parts have not accepted an executor run
+      // and cancel in the same way as queued work.
       j.status = 'cancelled';
       this.save(j);
       this.store.emit('job.cancelled', scope, j.requested_by, id);
@@ -409,35 +418,77 @@ export class JobService {
     scope: Scope,
     kind: 'valeria' | 'external',
     worker: string,
-  ): { job: Job; lease_token: string; expires_at: string } | null {
+  ): PreparedLease<undefined> | null;
+  lease<C>(
+    scope: Scope,
+    kind: 'valeria' | 'external',
+    worker: string,
+    prepare: (job: Job) => C,
+  ): PreparedLease<C> | null;
+  lease<C>(
+    scope: Scope,
+    kind: 'valeria' | 'external',
+    worker: string,
+    prepare?: (job: Job) => C,
+  ): PreparedLease<C | undefined> | null {
     this.expire();
     ensure(this.available(scope)[kind], 'executor_unavailable', 'Worker bridge is disabled');
     return this.store.transaction(() => {
-      const j = this.order(this.list(scope)).find(
+      const candidates = this.order(this.list(scope)).filter(
         (j) => j.executor_mode === kind && j.status === 'waiting_executor' && this.capacity(j),
       );
-      if (!j) return null;
-      this.begin(j);
-      const token = randomBytes(32).toString('base64url');
-      const s = this.settings(scope);
-      const ttl =
-        kind === 'valeria' ? s.valeria_bridge.lease_seconds : s.external_bridge.lease_seconds;
-      const deadline = new Date(Date.now() + (j.execution.timeout_sec ?? 300) * 1000).toISOString();
-      const expires_at = new Date(
-        Math.min(Date.now() + ttl * 1000, Date.parse(deadline)),
-      ).toISOString();
-      const lease: Lease = {
-        ...scope,
-        job_id: j.job_id,
-        attempt_id: j.attempt_id!,
-        worker_kind: kind,
-        worker_id: worker,
-        token_hash: hash(token),
-        expires_at,
-        deadline,
-      };
-      this.store.put('job_leases', j.job_id, lease);
-      return { job: j, lease_token: token, expires_at };
+      for (const j of candidates) {
+        let context: C | undefined;
+        try {
+          // Preparation is local and synchronous: no worker has accepted work
+          // until context validation and the complete lease transaction commit.
+          context = prepare?.(j);
+          if (
+            context &&
+            (typeof context === 'object' || typeof context === 'function') &&
+            typeof (context as { then?: unknown }).then === 'function'
+          )
+            throw new Error('Lease preparation must be synchronous');
+        } catch (error) {
+          if (!(error instanceof CuratorError) || error.code === 'internal_error') throw error;
+          j.status = 'failed';
+          j.error = { code: error.code, message: redact(error.message) };
+          this.save(j);
+          this.store.emit(
+            'job.failed',
+            j,
+            j.requested_by,
+            j.job_id,
+            { code: error.code, preflight: true },
+            j.correlation_id,
+          );
+          continue;
+        }
+        this.begin(j);
+        const token = randomBytes(32).toString('base64url');
+        const s = this.settings(scope);
+        const ttl =
+          kind === 'valeria' ? s.valeria_bridge.lease_seconds : s.external_bridge.lease_seconds;
+        const deadline = new Date(
+          Date.now() + (j.execution.timeout_sec ?? 300) * 1000,
+        ).toISOString();
+        const expires_at = new Date(
+          Math.min(Date.now() + ttl * 1000, Date.parse(deadline)),
+        ).toISOString();
+        const lease: Lease = {
+          ...scope,
+          job_id: j.job_id,
+          attempt_id: j.attempt_id!,
+          worker_kind: kind,
+          worker_id: worker,
+          token_hash: hash(token),
+          expires_at,
+          deadline,
+        };
+        this.store.put('job_leases', j.job_id, lease);
+        return { job: j, lease_token: token, expires_at, context };
+      }
+      return null;
     });
   }
   private authorizeLease(

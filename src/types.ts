@@ -87,6 +87,7 @@ export interface Execution {
 }
 export interface Settings {
   enabled: boolean;
+  analysis: { max_calls: number; overlap_chars: number };
   conversation_review: {
     enabled: boolean;
     every_n_actions: number;
